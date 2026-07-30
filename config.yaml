@@ -1,0 +1,233 @@
+# Configuració — tot el que canvia d'una família a una altra
+#
+# Aquest és l'únic fitxer que has d'editar per començar. Les eines el llegeixen
+# i no porten cap nom, cap identificador ni cap poble escrit al codi.
+#
+# Tal com ve, apunta a `exemple.ged`, un arbre inventat de 18 persones que
+# serveix per veure què fa cada eina abans de posar-hi les teves dades.
+
+# Com es diu el projecte. Surt a la identificació que enviem als arxius.
+projecte: genealogia
+
+# Una adreça de contacte, opcional però educada: si un arxiu veu qui fa les
+# peticions i per què, et pot demanar que pares en lloc de blocar-te el rang.
+contacte: ""
+
+# ---------------------------------------------------------------------------
+# L'arbre
+# ---------------------------------------------------------------------------
+
+# El fitxer que compta. Exporta'l d'Ancestris (o del programa que facis servir),
+# desa'l a l'arrel del repositori i posa'n el nom ací.
+#
+# Si ho deixes en blanc i hi ha un sol `.ged` a l'arrel, l'agafa. Si n'hi ha
+# més d'un, s'atura i t'ho pregunta: encertar-ho malament vol dir escriure
+# propostes a l'arbre que no toca.
+arbre: exemple.ged
+
+# Una exportació antiga de FamilySearch en GEDCOM, si en tens, per comparar-la
+# amb l'arbre. És opcional; sense això, `tools.match` treballa amb dades en viu.
+exportacio_familysearch: ""
+
+# ---------------------------------------------------------------------------
+# FamilySearch
+# ---------------------------------------------------------------------------
+
+familysearch:
+  # El PID de la persona des d'on es baixa l'ascendència. Obri el seu perfil a
+  # FamilySearch i copia el codi de la URL: té la forma XXXX-XXX.
+  #
+  # Tria-la pensant en quines dues bandes vols cobrir: arrencar per tu et dona
+  # les dues meitats dels teus pares; arrencar per un fill, les dels seus.
+  arrel: ""
+
+  # Un PID de persona difunta per comprovar que l'API respon. Qualsevol de
+  # l'arbre serveix; els vius no, perquè l'API els amaga.
+  prova_difunt: ""
+
+# Les credencials NO van ací. Van a `.env`, que és al .gitignore:
+#
+#     FAMILY_SEARCH_USERNAME=...
+#     FAMILY_SEARCH_PASSWORD=...
+
+# ---------------------------------------------------------------------------
+# Regions: quin arxiu toca per a cada poble
+# ---------------------------------------------------------------------------
+#
+# `tools.worklist` agrupa la gent per l'arxiu on cal anar a buscar-la, i ho
+# decideix pel poble de naixement. Els accents i les majúscules no importen.
+#
+# El que ve a continuació són les regions d'un arbre català i valencià, i és un
+# exemple que funciona: esborra el que no et serveix i posa els teus pobles.
+
+regions:
+  girona:
+    - Girona
+    - Fontcoberta
+    - La Bisbal d'Empordà
+    - Lladó
+    - Sant Pere Pescador
+    - Vilafant
+    - Fortià
+    - Terrades
+  valencia:
+    - Ontinyent
+    - Fontanars dels Alforins
+    - Moixent
+    - Albaida
+    - La Font de la Figuera
+    - Bocairent
+    - Agres
+  albacete:
+    - Jorquera
+    - Fuentealbilla
+    - Navas de Jorquera
+    - Alcalá del Júcar
+
+# Si el poble no surt a cap llista, es mira si el lloc de naixement conté
+# aquests texts. És més barroer i es comprova després.
+regions_per_defecte:
+  girona: girona
+  catalunya: girona
+  valència: valencia
+  valencia: valencia
+  albacete: albacete
+
+# Què s'ha de saber de cada arxiu abans d'anar-hi. Va tal qual al report
+# `reports/worklist.md`, i és el que estalvia viatges i quotes de soci.
+#
+# La `puntuacio` (0-5) diu **com de fàcil és arribar als llibres**, i entra al
+# rànquing de `tools.frontier`: una parròquia amb els llibres en línia val la
+# pena d'atacar abans que una que demana escriure una carta i esperar. És un
+# judici sobre l'accés, no sobre la família.
+guies:
+  girona:
+    title: Empordà i Gironès — Arxiu Diocesà de Girona
+    puntuacio: 5
+    nota: >-
+      Arxiu Diocesà de Girona: uns 4.500 llibres sacramentals digitalitzats i
+      consultables en línia, amb cobertura fins al 1920.
+    blurb: >-
+      Uns 4.500 llibres sacramentals digitalitzats i consultables en línia de
+      franc des de qualsevol ordinador. Bateigs, confirmacions, matrimonis,
+      defuncions i testaments des del segle XVI. Cobertura fins al 1920 en
+      general i fins al 1970 en alguns llibres de defuncions, per la llei de
+      protecció de dades a 100 anys.
+
+
+      No té API ni descàrrega massiva: és consulta a mà, parròquia per
+      parròquia. Comença pel quadre de parròquies i mira si el poble hi surt.
+    links:
+      Arxiu Diocesà de Girona: https://www.arxiuadg.org/
+      Llista de parròquies: https://www.arxiuadg.org/index.php/arxius/parroquies.html
+      Quadre de classificació: https://www.arxiuadg.org/index.php/arxius/quadre-classificacio.html
+      Arxius en línia (padrons d'habitants fins al 1936): https://arxiusenlinia.cultura.gencat.cat/
+    extra: >-
+      Els padrons d'habitants arriben al 1936 i són molt bons per situar una
+      família entre dos sagraments: hi surt tota la casa amb edats, cosa que
+      confirma filiacions que el bateig sol no demostra.
+  valencia:
+    title: Ontinyent i la Vall d'Albaida — arxius parroquials valencians
+    puntuacio: 3
+    nota: >-
+      Arxiu Parroquial de Santa Maria d'Ontinyent, quinque libri des del 1616.
+      L'índex diocesà en línia dona referències; els llibres, no.
+    blurb: >-
+      L'accés va pel Servei Diocesà d'Arxius Parroquials de València, que té un
+      índex en línia amb un sostre de quinze consultes al dia — vegeu
+      `tools/apv/`. Per als llibres mateixos, i per al que l'índex no cobreix,
+      cal l'Arxiu Diocesà de València.
+
+
+      Compte amb els llogarets: un poble que no va tenir parròquia pròpia fins
+      al segle XIX té els bateigs antics dins dels quinque libri de la parròquia
+      mare, i cercar-los pel seu nom no dona res.
+    links:
+      Arxiu Metropolità de València: https://www.arxiumap.org/
+      Arxiu Històric de la Comunitat Valenciana: https://cultura.gva.es/es/web/arxiu-historic-de-la-comunitat-valenciana
+      Registres eclesiàstics d'Espanya (wiki de FamilySearch): https://www.familysearch.org/es/wiki/Registros_eclesi%C3%A1sticos_de_Espa%C3%B1a
+    extra: ""
+  albacete:
+    title: Jorquera — Arxiu Històric Diocesà d'Albacete
+    puntuacio: 5
+    nota: >-
+      Arxiu Històric Diocesà d'Albacete: els llibres parroquials són
+      digitalitzats a FamilySearch, 1504–1979.
+    blurb: >-
+      La diòcesi diu que tots els arxius parroquials que custodia estan
+      digitalitzats a FamilySearch, 1504–1979. Això vol dir que aquesta branca
+      es pot treballar des de casa amb la cerca de registres.
+
+
+      Compte amb una cosa: la diòcesi d'Albacete no es va crear fins al 1949,
+      així que el material anterior pot estar catalogat sota Conca, Toledo,
+      Múrcia o Alacant. Si una cerca no dona res, prova amb aquestes.
+    links:
+      Arxiu Històric Diocesà d'Albacete: https://diocesisalbacete.org/archivo-historico-diocesano/
+      Espanya, registres catòlics (wiki de FamilySearch): https://www.familysearch.org/en/wiki/Spain,_Catholic_Church_Records_-_FamilySearch_Historical_Records
+    extra: ""
+
+# Excepcions per poble, quan un poble concret no es comporta com la seva regió.
+# El cas típic: un llogaret que no va tenir llibres propis i els té dins dels
+# d'una altra parròquia, o siga que buscar-lo pel seu nom no dona res.
+arxius:
+  Fontanars dels Alforins:
+    puntuacio: 3
+    nota: >-
+      Arxiu Parroquial d'Ontinyent: Fontanars era part del terme d'Ontinyent i
+      els bateigs antics són dins dels seus quinque libri, no en llibres propis.
+
+# ---------------------------------------------------------------------------
+# L'índex diocesà de València (tools/apv/)
+# ---------------------------------------------------------------------------
+#
+# Només et fa falta si investigues a la diòcesi de València. Si no, deixa-ho
+# com està: cap eina no el toca si no la crides.
+
+apv:
+  # La persona més profunda de la línia que un document ja confirma.
+  # `tools.apv.verify` puja des d'ací, perquè si un graó falla, els de damunt
+  # no valen una consulta. En blanc, arrenca per la persona arrel.
+  # A l'arbre d'exemple apunta a la banda valenciana, que és la que aquest índex
+  # pot resoldre: prova de deixar-ho en blanc i mira com canvia el pla.
+  terra_documentada: I00003
+
+  # Quina parròquia hauria registrat el sagrament, segons el lloc de naixement.
+  # Es miren per ordre i guanya la primera que concorda.
+  parroquies:
+    - si_el_lloc_conte: [ontinyent, onteniente]
+      parroquia: ontinyent
+    - si_el_lloc_conte: [fontanars, alforins]
+      parroquia: fontanars
+      # Abans d'aquest any el llogaret no tenia llibres propis i batejaven a la
+      # parròquia mare. Sense això, es cerca al lloc que no toca.
+      abans_de: 1755
+      llavors: ontinyent
+
+  # Si res no concorda, on es mira. En blanc vol dir «no ho sé», que és una
+  # resposta honesta i millor que cercar a l'atzar.
+  parroquia_per_defecte: ontinyent
+
+  # Naixement + aquests anys = l'estimació de l'any de casament, quan no hi ha
+  # cap event MARR. Varia per lloc i època.
+  edat_de_casar: 24
+
+# ---------------------------------------------------------------------------
+# El catàleg de l'Arxiu Diocesà de Girona (tools/adg/)
+# ---------------------------------------------------------------------------
+#
+# Només et fa falta si investigues al bisbat de Girona. No hi ha res que
+# calgui omplir: l'eina pregunta el catàleg i no porta cap poble escrit.
+# Això són només els defectes de la descàrrega.
+
+adg:
+  # Amb quina resolució es baixen les imatges: l = baixa, m = mitjana,
+  # h = alta. La `m` ja es llegeix bé; la `h` és per a lletra difícil i pesa
+  # tres o quatre vegades més.
+  resolucio: m
+
+  # Sostre de pàgines per execució. L'arxiu permet còpies per a ús personal i
+  # cobra drets per republicar, i la diferència entre les dues coses és si et
+  # baixes les vuit pàgines que et fan falta o el llibre sencer. Pujar-lo ha de
+  # ser una decisió, no un descuit: per això hi ha un límit i no un avís.
+  max_pagines: 12

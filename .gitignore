@@ -1,0 +1,25 @@
+# Credencials — MAI al repositori
+.env
+
+# Entorn Python
+.venv/
+__pycache__/
+*.pyc
+
+# Còpies de seguretat automàtiques (*_AAAAMMDD-HHMMSS.ged), les que fa Ancestris
+# en desar i les que fa tools.apply en escriure.
+*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].ged
+
+# Fonts documentals: els originals (escanejos, PDF, fotos, llibres, àudio) queden
+# fora del repositori, però les transcripcions en .md hi entren. És el que fa
+# consultable el contingut sense arrossegar-hi desenes de MB de binaris — i el que
+# evita republicar material que sovint no és teu.
+Fonts/**
+!Fonts/**/
+!Fonts/**/*.md
+
+# Memòria cau de les peticions a FamilySearch i comptadors de quota
+cache/
+
+# Fitxers de blocatge de LibreOffice
+.~lock.*
