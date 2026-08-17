@@ -84,14 +84,15 @@ def test_alternatives_points_at_the_marriage():
 
 # -- quota ---------------------------------------------------------------------
 
-def _quota_in_tmp(tmp: Path, limit: int = 15) -> Quota:
-    return Quota(path=tmp / "apv-quota.json", limit=limit)
+def _quota_in_tmp(tmp: Path, limit: int = 15, hard: bool = False) -> Quota:
+    return Quota(path=tmp / "apv-quota.json", limit=limit, hard=hard)
 
 
-def test_quota_counts_and_refuses():
+def test_quota_refuses_a_ceiling_the_archive_declared():
+    # `hard=True` is what reconcile() sets when a real page states a maximum.
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        q = _quota_in_tmp(tmp, limit=3)
+        q = _quota_in_tmp(tmp, limit=3, hard=True)
         for n in range(3):
             q.check()
             q.spend(f"consulta {n}")
@@ -101,7 +102,22 @@ def test_quota_counts_and_refuses():
         except RuntimeError as exc:
             assert "gastades" in str(exc)
         else:
-            raise AssertionError("passat el sostre s'ha de negar")
+            raise AssertionError("un sostre de l'arxiu s'ha de negar")
+
+
+def test_our_own_pace_warns_but_does_not_refuse():
+    """There is no confirmed daily ceiling on this archive -- see the header of
+    tools/apv/session.py. Our own pace is advisory, and this test is what keeps
+    it from hardening back into one."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        q = _quota_in_tmp(tmp, limit=3)
+        for n in range(5):
+            q.check()  # must not raise: nobody told us to stop
+            q.spend(f"consulta {n}")
+        assert q.used == 5, "les consultes es compten igual, sostre o no"
+        assert q.over_pace(), "i el pas passat s'ha de poder saber"
+        assert not q.hard
 
 
 def test_quota_survives_a_restart():
@@ -126,6 +142,12 @@ def test_server_count_wins():
                 "por lo que tienes 6 consultas disponibles")
         assert q.reconcile(page) == 9
         assert q.used == 9, "si l'arxiu diu 9, en portem 9"
+        # And a ceiling stated by the archive is the one kind we do enforce.
+        assert q.hard, "un màxim imprès a la pàgina passa a ser sostre dur"
+        assert q.limit == 15
+        # It also has to survive a restart, or it is not a ceiling.
+        again = Quota(path=tmp / "apv-quota.json")
+        assert again.hard and again.limit == 15
 
 
 def test_reconcile_never_lowers_our_count():

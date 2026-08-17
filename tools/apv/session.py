@@ -8,16 +8,31 @@ every page it serves.
 THE RULES THIS FILE ENFORCES, AND WHERE THEY COME FROM
 -----------------------------------------------------------------------------
 
-**Fifteen queries a day.** The archive prints it on the results page: «Debido a
+**There is no confirmed daily ceiling.** This file used to enforce fifteen
+queries a day as a hard limit, sourced from a secondhand claim -- «Debido a
 los expolios que últimamente esta sufriendo esta base de datos, nos vemos
 obligados a limitar el acceso a las consultas a un máximo de 15 diarias, de las
-cuales ya has realizado 6». That is a hard ceiling here, not a hint:
+cuales ya has realizado 6» -- that nobody had actually seen on the live site.
+Checking the site directly found no such message: `SERVER_COUNT` and
+`SERVER_LIMIT` below have never once matched a real page, and
+`cache/apv-quota.json` keeps reading `"server_said": null`. A sentence quoted
+secondhand became a constant in code, and then a "hard ceiling" in the docs,
+without anybody checking the source.
 
-  * the counter is kept **on disk**, keyed by date, so it survives restarts.
-    A cap that resets when the process does is not a cap.
-  * the page also states the archive's OWN running total, which we parse and
-    treat as **authoritative** -- if the server says 9 and we thought 4, ours
-    jumps to 9. Somebody was searching in a browser and those count too.
+So what is left, and why:
+
+  * **`SOFT_DAILY` is a pace you choose, not a rule you are under.** Going past
+    it warns and keeps working. It exists so that a loop cannot quietly make
+    hundreds of requests, not because anybody confirmed a real number -- the
+    default below is a reasonable starting point and yours to change.
+  * **If the archive ever does state a limit, it wins and it is hard.**
+    `reconcile()` parses both the running total and the ceiling off the page;
+    the moment a real page declares one, `check()` starts refusing. The
+    server's word beats ours in both directions.
+  * the counter is kept **on disk**, keyed by date, so it survives restarts,
+    and its `log` is the record of what was actually asked. That log is worth
+    more than the cap ever was: it lets a search that came back empty be
+    recognised later instead of proposed again.
   * cache hits cost nothing and are not counted, which is why every response is
     cached forever. Re-running a report is free.
 
@@ -25,7 +40,7 @@ cuales ya has realizado 6». That is a hard ceiling here, not a hint:
 `Content-Signal: search=yes, ai-train=no, use=reference`. The `Disallow: /`
 lines are Cloudflare's managed list of AI *training* crawlers -- ClaudeBot,
 GPTBot, CCBot, Bytespider, Amazonbot, Google-Extended, Applebot-Extended,
-meta-externalagent. Reading fifteen specific ancestors' baptism fiches is
+meta-externalagent. Reading a handful of specific ancestors' baptism fiches is
 `use=reference`, which the signal permits, and is not `ai-train`, which it
 forbids. This tool therefore identifies itself honestly as a personal research
 tool, not as any of those crawlers, and never enumerates the database.
@@ -56,23 +71,30 @@ ROOT = Path(__file__).resolve().parents[2]
 CACHE_DIR = ROOT / "cache"
 QUOTA_FILE = CACHE_DIR / "apv-quota.json"
 
-DAILY_LIMIT = 15
+# Our own courtesy pace, not the archive's rule -- see the header. Passing it
+# warns; only a limit the archive itself declares is ever enforced.
+SOFT_DAILY = 40
+DAILY_LIMIT = SOFT_DAILY  # kept for callers that still import the old name
 MIN_SECONDS_BETWEEN = 6.0
 
 # See the note in tools/fs/session.py: this comes from config.yaml.
 USER_AGENT = config.user_agent("apv")
 
 # «de las cuales ya has realizado 6» / «dont vous avez déjà effectué 6»
+#
+# Both numbers can arrive wrapped in markup -- «máximo de <b>15</b> diarias» --
+# so each side of the digit has to tolerate a run of tags.
+TAGS = r"(?:<[^>]*>\s*)*"
 SERVER_COUNT = re.compile(
-    r"(?:ya\s+has\s+realizado|d[ée]j[àa]\s+effectu[ée])\s*<?[^>]*>?\s*(\d+)", re.I
+    r"(?:ya\s+has\s+realizado|d[ée]j[àa]\s+effectu[ée])\s*" + TAGS + r"(\d+)", re.I
 )
 SERVER_LIMIT = re.compile(
-    r"m[áa]ximo\s+de\s*<?[^>]*>?\s*(\d+)\s*diarias", re.I
+    r"m[áa]ximo\s+de\s*" + TAGS + r"(\d+)\s*" + TAGS + r"diarias", re.I
 )
 
 
 class QuotaExhausted(RuntimeError):
-    """The day's fifteen are gone. Not an error to retry -- come back tomorrow."""
+    """Today's pace is spent, and the archive itself declared it -- not us."""
 
 
 class Challenged(RuntimeError):
@@ -95,10 +117,17 @@ class Challenged(RuntimeError):
 class Quota:
     """A daily counter that lives on disk, so it cannot be lost by restarting."""
 
-    def __init__(self, path: Path = QUOTA_FILE, limit: int = DAILY_LIMIT):
+    def __init__(self, path: Path = QUOTA_FILE, limit: int = SOFT_DAILY,
+                 hard: bool = False):
         self.path = path
         self.limit = limit
+        # `hard` is only ever true for a ceiling the archive itself declared,
+        # either on a page we read now or on one we read earlier today.
+        self.hard = hard
         self._state = self._load()
+        if self._state.get("limit_from_server"):
+            self.limit = int(self._state["limit_from_server"])
+            self.hard = True
 
     def _load(self) -> dict:
         today = date.today().isoformat()
@@ -122,14 +151,30 @@ class Quota:
     def remaining(self) -> int:
         return max(0, self.limit - self.used)
 
+    def over_pace(self, n: int = 1) -> bool:
+        return self.used + n > self.limit
+
     def check(self, n: int = 1) -> None:
-        """Refuse before spending, not after."""
-        if self.used + n > self.limit:
+        """Refuse before spending -- but only against a limit the archive set.
+
+        Our own `SOFT_DAILY` is a pace, so passing it prints a warning and
+        carries on. A ceiling the archive declared on its own pages is a rule,
+        and that one refuses.
+        """
+        if not self.over_pace(n):
+            return
+        if self.hard:
             raise QuotaExhausted(
                 f"les {self.limit} consultes d'avui ({self._state['day']}) estan gastades "
-                f"({self.used} fetes). L'arxiu les limita per dia i això no es força: "
-                f"torna demà, o mira si el que busques ja és a la memòria cau."
+                f"({self.used} fetes). AQUEST SOSTRE EL DIU L'ARXIU a la seva pàgina, "
+                f"no nosaltres, i no es força: torna demà, o mira si el que busques ja "
+                f"és a la memòria cau."
             )
+        print(
+            f"  avís: {self.used + n} consultes avui, per damunt del pas de {self.limit} "
+            f"que has triat. No és cap sostre de l'arxiu, però val la pena saber-ho. "
+            f"Continuo."
+        )
 
     def spend(self, what: str) -> None:
         self._state["used"] = self.used + 1
@@ -147,21 +192,31 @@ class Quota:
             self._state["used"] = theirs
         limit = SERVER_LIMIT.search(html or "")
         if limit:
+            # The archive has declared a ceiling on its own page. That outranks
+            # whatever pace you picked, and from here on it is enforced.
             self.limit = int(limit.group(1))
+            self.hard = True
             self._state["limit"] = self.limit
+            self._state["limit_from_server"] = self.limit
         self._save()
         return theirs
 
     def summary(self) -> str:
         said = self._state.get("server_said")
         extra = f", l'arxiu deia {said}" if said is not None else ""
-        return f"{self.used}/{self.limit} consultes avui ({self._state['day']}{extra})"
+        kind = "sostre de l'arxiu" if self.hard else "pas propi"
+        return (f"{self.used}/{self.limit} consultes avui "
+                f"({self._state['day']}{extra}) · {kind}")
 
 
 class Session:
-    """One lookup at a time, cached forever, counted against the daily fifteen."""
+    """One lookup at a time, cached forever, and every one of them counted.
 
-    def __init__(self, cache_dir: Path | None = None, limit: int = DAILY_LIMIT,
+    Counted for the record, not against a ration -- see the header for why
+    there is no confirmed daily ceiling on this archive.
+    """
+
+    def __init__(self, cache_dir: Path | None = None, limit: int = SOFT_DAILY,
                  dry_run: bool = False):
         self.quota = Quota(limit=limit)
         self.dry_run = dry_run
@@ -246,20 +301,23 @@ class Session:
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--limit", type=int, default=DAILY_LIMIT,
-                        help=f"sostre diari de consultes (per defecte {DAILY_LIMIT}); "
-                             "només serveix per BAIXAR-lo")
+    parser.add_argument("--limit", type=int, default=SOFT_DAILY,
+                        help=f"el teu pas diari de consultes (per defecte "
+                             f"{SOFT_DAILY}). Passar-lo avisa i continua: no és cap "
+                             "sostre de l'arxiu. Es pot pujar i baixar")
     parser.add_argument("--dry-run", action="store_true",
                         help="no demana res: només diu què demanaria")
     parser.add_argument("--quota", action="store_true",
                         help="diu quantes consultes queden avui i para")
     parser.add_argument("--record", metavar="QUÈ", action="append", default=[],
-                        help="apunta una consulta feta A MÀ al navegador. El sostre "
-                             "és de l'arxiu, no del nostre script: una cerca feta al "
-                             "navegador el gasta igual, i si no s'apunta el comptador "
-                             "menteix. Repetible.")
+                        help="apunta una consulta feta A MÀ al navegador. Val la pena "
+                             "encara que no hi haja sostre: el registre és el que "
+                             "evita tornar a demanar una cerca que ja va tornar "
+                             "buida. Repetible.")
 
 
 def build_session(args: argparse.Namespace) -> Session:
-    limit = min(int(getattr(args, "limit", DAILY_LIMIT) or DAILY_LIMIT), DAILY_LIMIT)
+    # No clamp: there is no confirmed archive ceiling to defend here. A limit
+    # the archive declares still wins, but it arrives through Quota.reconcile.
+    limit = int(getattr(args, "limit", SOFT_DAILY) or SOFT_DAILY)
     return Session(limit=limit, dry_run=bool(getattr(args, "dry_run", False)))
