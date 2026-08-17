@@ -167,12 +167,19 @@ que carrega bé; ell recalcula la numeració de Sosa.
 ```
 
 Una entrada amb `accept: true` ja és a l'arbre i no la tornaràs a mirar, però es queda
-al fitxer i tapa les tres que sí que has de decidir. Això les mou a
-`reports/aplicades/` amb els comentaris inclosos.
+al fitxer i tapa les tres que sí que has de decidir. Una entrada amb `accept: false` ja
+és una decisió presa i té el mateix problema. `tools.archive` mou les primeres a
+`reports/aplicades/` i les segones a `reports/descartades/`, amb els comentaris
+inclosos; només `accept: null` es queda al fitxer.
 
-De passada tanca un parany: un fitxer que és tot `accept: true` té la mateixa pinta
-que un que està a punt de passar, i tornar-lo a passar per `tools.apply` insereix cada
-línia una segona vegada.
+De passada tanca un parany: un fitxer que és tot `accept: true` (o tot `accept: false`)
+té la mateixa pinta que un que està a punt de passar, i tornar-lo a passar per
+`tools.apply` o `tools.correct` insereix cada línia una segona vegada.
+
+`tools.research` no deixa de comptar una proposta rebutjada pel fet d'haver-la
+arxivat: mira tant `reports/candidates-*.yaml` com `reports/descartades/candidates-*.yaml`
+abans de tornar a proposar algú, així que un rebuig no torna a sortir la setmana
+següent només perquè `tools.archive` l'ha tret de la vista.
 
 ### Corregir el que ja hi és
 
@@ -330,11 +337,13 @@ programes lliures que parlen amb FamilySearch, i s'espatlla cada sis o dotze mes
 canvien alguna cosa. Si un dia falla, entra amb el navegador, copia el testimoni d'una
 petició a l'API i passa'l amb `--token`.
 
-**`_SOSADABOVILLE` no es toca.** Ancestris el regenera en desar. El que no arregla és que
-n'escriu **duplicats**: la mateixa persona acaba amb la mateixa numeració repetida, i cada
-desat n'afig una còpia més. Cap eina d'aquí no les llegeix i no fan mal a res, però és una
-fuita lenta. Si algun dia molesta, es netegen amb un `tools.correct` que hi deixe una sola
-línia per valor; el que no s'ha de fer és esperar que Ancestris ho faça.
+**`_SOSADABOVILLE` no es llegeix, però sí que es neteja en desar.** Ancestris el
+regenera cada vegada que desa i n'escriu **duplicats**: la mateixa persona acaba amb la
+mateixa numeració repetida, i cada desat n'afig una còpia més. Cap eina d'aquí no els
+llegeix i no fan mal a res, però és una fuita lenta. `tools.apply` i `tools.correct`
+deixen només l'última línia de cada registre —la que Ancestris creu ara mateix— cada
+cop que escriuen el fitxer, i ho diuen a la sortida quan en descarten cap; el que no
+s'ha de fer és esperar que Ancestris ho faça.
 
 ## Llicència
 

@@ -23,7 +23,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from tools import config
-from tools.gedcom.lines import GedcomFile
+from tools.gedcom.lines import SOSA_TAG, GedcomFile, dedupe_sosa
 from tools.gedcom.splice import Splicer
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -401,6 +401,62 @@ def _delete_guard_assertions(correct, ged, stamp) -> None:
     check(GedcomFile(ged.path).raw == ged.raw, "el fitxer del disc no s'ha tocat")
 
 
+def test_dedupe_sosa() -> None:
+    """The de-duplication that `write` does on every save.
+
+    Ancestris appends a fresh `_SOSADABOVILLE` line on each save instead of
+    replacing the one already there, so a long-lived tree accumulates several
+    lines where one belongs. `write` drops them, and this is where the rule is
+    pinned down: KEEP THE LAST, because the stale line comes first and the
+    current calculation is appended behind it.
+    """
+    print("\ndedupe _SOSADABOVILLE")
+    raw = [
+        "0 @I1@ INDI",
+        "1 NAME A /B/",
+        "1 _SOSADABOVILLE 54-2 G5",   # stale: this is the one that must go
+        "1 _SOSADABOVILLE 54-1 G5",
+        "1 _SOSADABOVILLE 54-1 G5",
+        "1 SEX M",
+        "0 @I2@ INDI",                # a single line is left alone
+        "1 _SOSADABOVILLE 4 G3",
+        "0 TRLR",
+    ]
+    cleaned, dropped = dedupe_sosa(raw)
+    check(len(dropped) == 2, "the two extra lines are dropped", str(len(dropped)))
+    check(
+        [ln for ln in cleaned if SOSA_TAG in ln]
+        == ["1 _SOSADABOVILLE 54-1 G5", "1 _SOSADABOVILLE 4 G3"],
+        "the LAST line of each record survives",
+    )
+    check(len(cleaned) == len(raw) - 2, "nothing else is touched", str(len(cleaned)))
+    check(dedupe_sosa(cleaned) == (cleaned, []), "idempotent: a second pass is a no-op")
+
+    # A file with no duplicates must come back untouched, or every save would
+    # rewrite the file for nothing.
+    clean = ["0 @I1@ INDI", "1 _SOSADABOVILLE 4 G3", "0 TRLR"]
+    check(dedupe_sosa(clean) == (clean, []), "a clean file is returned unchanged")
+
+    # The tag only counts at level 1 inside a record, and record boundaries are
+    # what separate one person's lines from the next.
+    two = ["0 @I1@ INDI", "1 _SOSADABOVILLE 4 G3", "0 @I2@ INDI", "1 _SOSADABOVILLE 4 G3", "0 TRLR"]
+    check(dedupe_sosa(two) == (two, []), "one line each in two records is not a duplicate")
+
+    # And it survives the round trip against a real file: `exemple.ged` already
+    # carries a genuine Ancestris duplicate (I00012), so writing it out leaves
+    # one line per person instead of accumulating a second copy.
+    ged = GedcomFile(EXAMPLE)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = ged.write(Path(tmp) / "out.ged")
+        reread = GedcomFile(out)
+        dupes = [
+            r.xref
+            for r in reread.of_type("INDI")
+            if len(reread.sub(r.xref, SOSA_TAG)) > 1
+        ]
+        check(not dupes, "a written file has no duplicate _SOSADABOVILLE lines", str(dupes[:3]))
+
+
 def main() -> int:
     if not EXAMPLE.exists():
         print(f"missing {EXAMPLE}: the value tests need it")
@@ -414,6 +470,7 @@ def main() -> int:
     test_splice_append_and_insert()
     test_place_lookup_never_relocates()
     test_correct_delete_guards()
+    test_dedupe_sosa()
 
     # Invariants, against the real tree: the ones that protect your data.
     try:

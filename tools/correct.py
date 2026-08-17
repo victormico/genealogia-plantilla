@@ -40,7 +40,7 @@ from pathlib import Path
 import yaml
 
 from .config import tree_path
-from .gedcom.lines import GedcomFile
+from .gedcom.lines import SOSA_TAG, GedcomFile, dedupe_sosa
 from .apply import accepted, validate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -262,10 +262,16 @@ def main() -> int:
 
     for line in log:
         print(line)
-    after = render(ged, replacements, insertions, deletions)
+    # Compared with the Ancestris d'Aboville duplicates already gone from both
+    # sides, so the counts below describe THIS correction and not the cleanup
+    # that `write` does regardless. The cleanup gets its own line.
+    before, dropped = dedupe_sosa(ged.raw)
+    after, _ = dedupe_sosa(render(ged, replacements, insertions, deletions))
+    if dropped:
+        print(f"  {len(dropped)} línia/es {SOSA_TAG} duplicada/es que s'esborraran en desar")
 
     diff = list(
-        unified_diff(ged.raw, after, fromfile=f"a/{ged.path.name}", tofile=f"b/{ged.path.name}", n=1, lineterm="")
+        unified_diff(before, after, fromfile=f"a/{ged.path.name}", tofile=f"b/{ged.path.name}", n=1, lineterm="")
     )
     changed = sum(1 for d in diff if d.startswith(("+", "-")) and not d.startswith(("+++", "---")))
     print(f"\n{len(touched)} registres, {len(replacements)} línies substituïdes, "
@@ -283,7 +289,7 @@ def main() -> int:
     print(f"escrit {ged.path.name}; la versió anterior queda com a {backup.name}")
 
     reread = GedcomFile(ged.path)
-    print(f"rellegit: {len(reread.raw)} línies (abans {len(ged.raw)})")
+    print(f"rellegit: {len(reread.raw)} línies (abans {len(before)})")
     return 0
 
 
