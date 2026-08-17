@@ -1,24 +1,29 @@
-"""Move the proposals that are already in the GEDCOM out of the review files.
+"""Move decided proposals out of the review files.
 
 `reports/*.yaml` only ever grow. An entry marked `accept: true` has been written
 to the tree and will never be looked at again, but it stays in the file and
 buries the handful that still need a decision -- and a file that is *all*
 `accept: true` looks exactly like one that is ready to run. Passing that to
-tools.apply or tools.correct a second time inserts every line again.
+tools.apply or tools.correct a second time inserts every line again. The same
+is true, for a different reason, of `accept: false`: a rejection is a decision
+too, and once it has been read it just clutters the file that's meant to hold
+what's still open.
 
-So the applied entries move to `reports/aplicades/`, keeping the file's own
-comments with them. These files are documents as much as data: the reasoning is
-in the comments, and PyYAML would throw all of it away on a round-trip. The split
-is therefore done on the text, entry by entry, and the result is checked by
-parsing both halves and comparing them with the original.
+So `accept: true` entries move to `reports/aplicades/` and `accept: false`
+entries move to `reports/descartades/`, each keeping the file's own comments
+with them. These files are documents as much as data: the reasoning is in the
+comments, and PyYAML would throw all of it away on a round-trip. The split is
+therefore done on the text, entry by entry, and the result is checked by
+parsing all the pieces and comparing them with the original.
 
-Two things deliberately stay where they are:
+Only one thing deliberately stays where it is: `accept: null`, still to
+decide. That is the whole point of the exercise.
 
-  accept: false   A rejection is a decision. tools.research reads it from
-                  `reports/candidates-*.yaml` so that somebody refuted by a
-                  parish record is not proposed again next week; it does not
-                  look inside the archive.
-  accept: null    Still to decide. That is the whole point of the exercise.
+A rejection moving to `reports/descartades/` does not stop being read:
+`tools.research` scans both `reports/candidates-*.yaml` and
+`reports/descartades/candidates-*.yaml` for `accept: false` so that somebody
+refuted by a parish record is not proposed again next week; it does not look
+inside `reports/aplicades/`.
 
     python3 -m tools.archive           # dry run
     python3 -m tools.archive --write
@@ -39,6 +44,7 @@ from .config import tree_path
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports"
 ARCHIVE = REPORTS / "aplicades"
+DISCARDED = REPORTS / "descartades"
 
 ENTRY = re.compile(r"^-\s")
 COMMENT_OR_BLANK = re.compile(r"^\s*(#.*)?$")
@@ -121,11 +127,19 @@ def plan_file(path: Path, stamp: str) -> dict | None:
     if not original:
         return None
     # A file can be archived more than once: accept three today, three next week.
-    # The archive has to GROW. Writing it fresh would silently throw away
+    # Each destination has to GROW. Writing it fresh would silently throw away
     # everything filed there before.
-    prior_path = ARCHIVE / path.name
-    prior_text = prior_path.read_text(encoding="utf-8") if prior_path.exists() else ""
-    prior = yaml.safe_load(prior_text) or [] if prior_text else []
+    prior_archive_path = ARCHIVE / path.name
+    prior_archive_text = (
+        prior_archive_path.read_text(encoding="utf-8") if prior_archive_path.exists() else ""
+    )
+    prior_archive = yaml.safe_load(prior_archive_text) or [] if prior_archive_text else []
+    prior_discard_path = DISCARDED / path.name
+    prior_discard_text = (
+        prior_discard_path.read_text(encoding="utf-8") if prior_discard_path.exists() else ""
+    )
+    prior_discard = yaml.safe_load(prior_discard_text) or [] if prior_discard_text else []
+
     header, chunks = split_entries(text)
     if len(chunks) != len(original):
         raise ValueError(
@@ -133,76 +147,120 @@ def plan_file(path: Path, stamp: str) -> dict | None:
             "no es toca"
         )
     done = [c for c in chunks if accept_of(c) is True]
-    keep = [c for c in chunks if accept_of(c) is not True]
-    if not done:
+    discarded = [c for c in chunks if accept_of(c) is False]
+    keep = [c for c in chunks if not (accept_of(c) is True or accept_of(c) is False)]
+    if not done and not discarded:
         return None
 
-    if prior:
-        archived = (
-            prior_text.rstrip("\n")
-            + "\n\n"
-            + note([f"Afegit el {stamp}, d'una segona passada sobre reports/{path.name}."])
-            + "\n\n"
-            + "\n".join(done).rstrip("\n")
-            + "\n"
-        )
-    else:
-        archived = rebuild(
-            header,
-            done,
-            note(
-                [
-                    f"ARXIU ({stamp}). Aquestes entrades ja són a «{tree_path().name}».",
-                    "",
-                    "No les tornis a passar per tools.apply ni tools.correct: hi tornarien a",
-                    "inserir les mateixes línies. Són aquí per saber d'on ve cada cosa.",
-                ]
-                + (
+    archived = None
+    if done:
+        if prior_archive_text:
+            archived = (
+                prior_archive_text.rstrip("\n")
+                + "\n\n"
+                + note([f"Afegit el {stamp}, d'una segona passada sobre reports/{path.name}."])
+                + "\n\n"
+                + "\n".join(done).rstrip("\n")
+                + "\n"
+            )
+        else:
+            archived = rebuild(
+                header,
+                done,
+                note(
                     [
+                        f"ARXIU ({stamp}). Aquestes entrades ja són a «{tree_path().name}».",
                         "",
-                        f"El que d'aquest fitxer espera decisió és a reports/{path.name}.",
+                        "No les tornis a passar per tools.apply ni tools.correct: hi tornarien a",
+                        "inserir les mateixes línies. Són aquí per saber d'on ve cada cosa.",
                     ]
-                    if keep
-                    else []
-                )
-            ),
-        )
-    remaining = (
-        rebuild(
-            header,
-            keep,
-            note(
-                [
-                    f"Les entrades d'aquest fitxer que ja són al GEDCOM s'han mogut a",
-                    f"reports/aplicades/{path.name} ({stamp}).",
-                    "",
-                    "Aquí queda només el que espera decisió, i les propostes descartades,",
-                    "que han de continuar en aquesta carpeta perquè tools.research les llegeix.",
-                ]
-            ),
-        )
-        if keep
-        else None
-    )
+                    + (
+                        [
+                            "",
+                            f"El que d'aquest fitxer espera decisió és a reports/{path.name}.",
+                        ]
+                        if keep
+                        else []
+                    )
+                ),
+            )
+
+    discarded_text = None
+    if discarded:
+        if prior_discard_text:
+            discarded_text = (
+                prior_discard_text.rstrip("\n")
+                + "\n\n"
+                + note([f"Afegit el {stamp}, d'una segona passada sobre reports/{path.name}."])
+                + "\n\n"
+                + "\n".join(discarded).rstrip("\n")
+                + "\n"
+            )
+        else:
+            discarded_text = rebuild(
+                header,
+                discarded,
+                note(
+                    [
+                        f"DESCARTADES ({stamp}). Propostes amb `accept: false`, tretes de",
+                        f"reports/{path.name}.",
+                        "",
+                        "`tools.research` les llegeix d'ací (a més de reports/candidates-*.yaml)",
+                        "per no tornar a proposar algú que ja s'ha dit que no.",
+                    ]
+                    + (
+                        [
+                            "",
+                            f"El que d'aquest fitxer espera decisió és a reports/{path.name}.",
+                        ]
+                        if keep
+                        else []
+                    )
+                ),
+            )
+
+    remaining_note: list[str] = []
+    if done:
+        remaining_note += [
+            "Les entrades d'aquest fitxer que ja són al GEDCOM s'han mogut a",
+            f"reports/aplicades/{path.name} ({stamp}).",
+        ]
+    if discarded:
+        if remaining_note:
+            remaining_note.append("")
+        remaining_note += [
+            "Les propostes descartades (`accept: false`) s'han mogut a",
+            f"reports/descartades/{path.name} ({stamp}).",
+        ]
+    remaining_note += ["", "Aquí queda només el que espera decisió."]
+    remaining = rebuild(header, keep, note(remaining_note)) if keep else None
 
     # The split has to be lossless: same entries, same order, nothing invented,
-    # and whatever was already in the archive still there.
-    check = (yaml.safe_load(archived) or []) + (
-        yaml.safe_load(remaining) or [] if remaining else []
-    )
-    expected = (
-        list(prior)
-        + [e for e in original if e.get("accept") is True]
-        + [e for e in original if e.get("accept") is not True]
-    )
+    # and whatever was already filed away still there. Only checked for the
+    # pieces this run actually writes.
+    check: list = []
+    expected: list = []
+    if done:
+        check += yaml.safe_load(archived) or []
+        expected += list(prior_archive) + [e for e in original if e.get("accept") is True]
+    if discarded:
+        check += yaml.safe_load(discarded_text) or []
+        expected += list(prior_discard) + [e for e in original if e.get("accept") is False]
+    if keep:
+        check += yaml.safe_load(remaining) or []
+        expected += [
+            e for e in original if not (e.get("accept") is True or e.get("accept") is False)
+        ]
     if check != expected:
         raise ValueError(f"{path.name}: la divisió no quadra amb l'original; no es toca")
 
     return {
         "path": path,
         "archived": archived,
+        "discarded": discarded_text,
         "remaining": remaining,
         "done": len(done),
+        "discarded_n": len(discarded),
         "keep": len(keep),
     }
 
@@ -225,29 +283,38 @@ def main() -> int:
             plans.append(plan)
 
     if not plans:
-        print("res per arxivar: cap fitxer amb entrades ja aplicades")
+        print("res per arxivar: cap fitxer amb entrades ja aplicades o descartades")
         return 0
 
     for plan in plans:
         name = plan["path"].name
-        if plan["remaining"]:
-            print(f"  {name}: {plan['done']} aplicades -> aplicades/, {plan['keep']} hi queden")
-        else:
-            print(f"  {name}: {plan['done']} aplicades -> aplicades/, el fitxer sencer")
+        bits = []
+        if plan["done"]:
+            bits.append(f"{plan['done']} aplicades -> aplicades/")
+        if plan["discarded_n"]:
+            bits.append(f"{plan['discarded_n']} descartades -> descartades/")
+        tail = f"{plan['keep']} hi queden" if plan["remaining"] else "el fitxer sencer mogut"
+        print(f"  {name}: {', '.join(bits)}, {tail}")
 
     if not args.write:
         print("\nassaig en sec — cal --write per moure-ho")
         return 0
 
-    ARCHIVE.mkdir(exist_ok=True)
+    if any(plan["archived"] for plan in plans):
+        ARCHIVE.mkdir(exist_ok=True)
+    if any(plan["discarded"] for plan in plans):
+        DISCARDED.mkdir(exist_ok=True)
     for plan in plans:
         path: Path = plan["path"]
-        (ARCHIVE / path.name).write_text(plan["archived"], encoding="utf-8")
+        if plan["archived"]:
+            (ARCHIVE / path.name).write_text(plan["archived"], encoding="utf-8")
+        if plan["discarded"]:
+            (DISCARDED / path.name).write_text(plan["discarded"], encoding="utf-8")
         if plan["remaining"]:
             path.write_text(plan["remaining"], encoding="utf-8")
         else:
             path.unlink()
-    print(f"\n{len(plans)} fitxer(s) arxivat(s) a {ARCHIVE.relative_to(ROOT)}/")
+    print(f"\n{len(plans)} fitxer(s) tocats a {REPORTS.relative_to(ROOT)}/")
     return 0
 
 

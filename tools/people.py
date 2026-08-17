@@ -38,6 +38,20 @@ class Person:
     fams: list[str] = field(default_factory=list)
     sosa: str | None = None
     source_count: int = 0
+    # `2 PEDI` under FAMC. Absent means "birth" per GEDCOM 5.5.1, so None and
+    # "birth" mean the same thing; anything else is a non-biological link.
+    pedigree: str | None = None
+
+    @property
+    def famc_is_birth(self) -> bool:
+        """Whether FAMC is a biological filiation, not adoptive/foster/sealing.
+
+        Absent `PEDI` means "birth" per GEDCOM 5.5.1, so `None` and `"birth"`
+        mean the same thing; anything else -- `foster`, `adopted`, `sealing` --
+        is not, and `Tree.ancestors()` stops the walk there rather than
+        reporting a biological line that no document supports.
+        """
+        return self.pedigree is None or self.pedigree.lower() == "birth"
 
     # -- derived ----------------------------------------------------------
 
@@ -143,6 +157,7 @@ def load_people(ged: GedcomFile) -> dict[str, Person]:
             death_date, death_place = _event(ged, xref, "BURI")
 
         famc_lines = ged.sub(xref, "FAMC")
+        pedi = ged.nested(famc_lines[0], "PEDI", xref) if famc_lines else None
         people[xref] = Person(
             xref=xref,
             name=name,
@@ -158,6 +173,7 @@ def load_people(ged: GedcomFile) -> dict[str, Person]:
             fams=[ln.pointer for ln in ged.sub(xref, "FAMS") if ln.pointer],
             sosa=ged.value(xref, "_SOSADABOVILLE"),
             source_count=len(ged.sub(xref, "SOUR")),
+            pedigree=pedi.value.strip() if pedi and pedi.value.strip() else None,
         )
     return people
 
@@ -201,6 +217,36 @@ class Tree:
         self.by_fsftid = {
             p.fsftid: p for p in self.people.values() if p.fsftid
         }
+
+    def ancestors(self, root: str, birth_only: bool = True) -> dict[int, list[str]]:
+        """Every ancestor slot of `root` by generation, walking FAMC.
+
+        Generation 1 is the root. Returns one entry per *slot*, not per person,
+        so an ancestor reached by two different paths (implex) appears twice --
+        which is the point: there are two ways to count these and they do not
+        agree, because Ancestris labels each person with their lowest Sosa
+        number and nothing else. Reading `_SOSADABOVILLE` undercounts; this
+        walks the links.
+
+        With `birth_only` (the default) a non-biological FAMC stops the walk: a
+        foster or adoptive parent's own ancestors are not this person's
+        ancestors, even though Ancestris still draws the line. See
+        `Person.famc_is_birth`.
+        """
+        by_generation: dict[int, list[str]] = {}
+        frontier = [root] if root in self.people else []
+        generation = 1
+        while frontier:
+            by_generation[generation] = list(frontier)
+            following = []
+            for xref in frontier:
+                person = self.people[xref]
+                if birth_only and not person.famc_is_birth:
+                    continue
+                following.extend(p.xref for p in self.parents(xref))
+            frontier = following
+            generation += 1
+        return by_generation
 
     def parents(self, xref: str) -> list[Person]:
         person = self.people.get(xref)

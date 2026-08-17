@@ -1,0 +1,86 @@
+# Els informes generats, refets a `main` després de cada merge.
+#
+# Tots quatre es calculen des del repositori i prou -- ni credencials ni xarxa --
+# i són deterministes: dues execucions seguides donen el mateix fitxer byte a
+# byte. Per això es poden cometre sense por de fer soroll a cada merge; si res no
+# canvia, no hi ha commit.
+
+name: Informes
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Dos merges seguits no s'han de trepitjar el push l'un a l'altre.
+concurrency:
+  group: informes-main
+  cancel-in-progress: false
+
+jobs:
+  refer:
+    name: Refer i cometre els informes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Refer els informes
+        run: |
+          set -euo pipefail
+
+          # `tools.estat` surt amb 1 quan el GEDCOM cita rutes de Fonts/ que no
+          # existeixen, però l'informe s'escriu igualment: aquell problema el
+          # denuncia `tools.lint --rutes`, no aquest pas. Per no confondre-ho amb
+          # una execució que ha petat de veritat, el que es comprova és la línia
+          # que l'eina imprimeix en acabar d'escriure.
+          python -m tools.estat > estat.log 2>&1 || true
+          cat estat.log
+          grep -q "wrote reports/estat.md" estat.log
+          rm estat.log
+
+          # Sense `cache/pedigree.json` (que necessita credencials i és al
+          # .gitignore) tots dos fan servir `reports/frontier-fs.json`, si n'hi
+          # ha.
+          python -m tools.frontier
+          python -m tools.worklist
+
+          # L'últim: llegeix tots els `reports/*.md`, o siga que ha de veure els
+          # altres tres ja refets.
+          python -m tools.lint --duplicacio
+
+      - name: Cometre'ls si han canviat
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- reports/; then
+            echo "Els informes ja estaven al dia." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## Informes refets"
+            echo
+            echo '```'
+            git diff --stat -- reports/
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          git commit -m "Els informes, refets després del merge"
+
+          # Un push fet amb el GITHUB_TOKEN no torna a disparar cap workflow, o
+          # siga que això no es pot repetir en bucle.
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import report
 from .config import fs_dump_path, tree_path
 from .people import Person, Tree
 from .normalize import fold, given_match, place_match, year_match
@@ -358,7 +359,7 @@ def write_report(matches: list[Match], canon_tree: Tree, fs_tree, path: Path) ->
         )
 
     lines.extend(hygiene_section(canon_tree))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    report.write(path, "\n".join(lines) + "\n")
 
 
 def hygiene_section(canon_tree: Tree) -> list[str]:

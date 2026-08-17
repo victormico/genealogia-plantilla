@@ -171,15 +171,29 @@ class GedcomFile:
     # -- output -----------------------------------------------------------
 
     def render(self, raw: list[str] | None = None) -> str:
-        """Reassemble the file text. With no argument this is byte-identical."""
+        """Reassemble the file text. With no argument this is byte-identical.
+
+        This is the faithful path and stays faithful: it never drops a line.
+        `write` is where the d'Aboville de-duplication happens -- see
+        `dedupe_sosa` -- so anyone who needs an exact copy renders it.
+        """
         body = self.newline.join(self.raw if raw is None else raw)
         return (BOM if self.has_bom else "") + body + (
             self.newline if self.trailing_newline else ""
         )
 
     def write(self, path: str | Path, raw: list[str] | None = None) -> Path:
+        """Write the file out, dropping duplicate `_SOSADABOVILLE` lines.
+
+        The de-duplication is here rather than in each caller so that nothing
+        can write a duplicate by forgetting to ask. It is idempotent, so
+        callers that have already cleaned their own line list -- `tools.apply`
+        and `tools.correct` do, to keep their dry-run diff honest -- lose
+        nothing by passing through it again.
+        """
         out = Path(path)
-        out.write_text(self.render(raw), encoding="utf-8", newline="")
+        cleaned, _ = dedupe_sosa(self.raw if raw is None else raw)
+        out.write_text(self.render(cleaned), encoding="utf-8", newline="")
         return out
 
     def __repr__(self) -> str:
@@ -188,3 +202,55 @@ class GedcomFile:
             counts[r.tag] = counts.get(r.tag, 0) + 1
         summary = " ".join(f"{t}={n}" for t, n in sorted(counts.items()))
         return f"<GedcomFile {self.path.name} lines={len(self.raw)} {summary}>"
+
+
+# -- the Ancestris d'Aboville duplicates ----------------------------------
+
+SOSA_TAG = "_SOSADABOVILLE"
+
+
+def dedupe_sosa(raw: list[str]) -> tuple[list[str], list[str]]:
+    """Drop the duplicate `_SOSADABOVILLE` lines, keeping the last per record.
+
+    Ancestris recomputes this tag on every save and *appends* the result
+    instead of replacing the line already there. Left alone, a record's count
+    of these lines only ever grows, one more per save. They harm nothing (no
+    tool here reads them; the Sosa count is done by walking `FAMC`) but they
+    swamp the diff of every save.
+
+    **The last line is the one that survives, and that is not arbitrary.** The
+    stale line comes first and the current calculation is appended after it,
+    so the tail is what Ancestris believes today. A correct calculation never
+    swaps two siblings' numbers, so when two duplicated records disagree about
+    who leads, the later-appended value is the trustworthy one.
+
+    Returns `(lines, dropped)`. `dropped` is for reporting -- callers print it
+    so a silent deletion never happens.
+
+    This does not fix the cause. The next Ancestris save will append one more
+    line to each affected record; this only keeps it from accumulating.
+    """
+    keep_from = _sosa_indices_to_drop(raw)
+    if not keep_from:
+        return list(raw), []
+    dropped = [raw[i] for i in sorted(keep_from)]
+    return [line for i, line in enumerate(raw) if i not in keep_from], dropped
+
+
+def _sosa_indices_to_drop(raw: list[str]) -> set[int]:
+    """Indices of every `_SOSADABOVILLE` line but the last one of its record."""
+    drop: set[int] = set()
+    found: list[int] = []
+
+    def flush() -> None:
+        if len(found) > 1:
+            drop.update(found[:-1])
+        found.clear()
+
+    for i, line in enumerate(raw):
+        if line.startswith("0 "):
+            flush()
+        elif line.startswith(f"1 {SOSA_TAG} "):
+            found.append(i)
+    flush()
+    return drop

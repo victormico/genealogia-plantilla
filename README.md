@@ -20,6 +20,7 @@ exactament què ha canviat.
 | `tools/` | les eines. Cap no porta cap nom ni cap poble escrit al codi |
 | `Fonts/` | l'estructura per a les fonts, amb les instruccions. Comença per **`Fonts/00 LLEGIU-ME.md`** |
 | `reports/` | on surten els informes. Comença per **`reports/pendents.md`** |
+| `.github/workflows/` | la CI: proves a cada PR, informes refets a cada merge, recerca setmanal opcional |
 
 ## Comença aquí
 
@@ -33,11 +34,15 @@ python3 -m venv .venv
 Prova que tot va, contra l'arbre d'exemple i sense tocar la xarxa:
 
 ```bash
-.venv/bin/python -m tools.tests.test_gedcom   # el fitxer es reescriu byte a byte igual
-.venv/bin/python -m tools.tests.test_render   # noms, dates i llocs
-.venv/bin/python -m tools.tests.test_apv      # 30 proves de l'índex diocesà
-.venv/bin/python -m tools.tests.test_adg      # 20 proves del catàleg de Girona
-.venv/bin/python -m tools.frontier --top 5    # qui bloqueja l'arbre d'exemple
+.venv/bin/python -m tools.tests.test_gedcom       # el fitxer es reescriu byte a byte igual
+.venv/bin/python -m tools.tests.test_render       # noms, dates i llocs
+.venv/bin/python -m tools.tests.test_estat        # les generacions i els comptadors
+.venv/bin/python -m tools.tests.test_frontmatter  # el vocabulari de les fitxes .md
+.venv/bin/python -m tools.tests.test_obsidian     # l'exportació per a Charted Roots
+.venv/bin/python -m tools.tests.test_frontier     # ready/stuck/unknown/unlinked
+.venv/bin/python -m tools.tests.test_apv          # 30 proves de l'índex diocesà
+.venv/bin/python -m tools.tests.test_adg          # 20 proves del catàleg de Girona
+.venv/bin/python -m tools.frontier --top 5        # qui bloqueja l'arbre d'exemple
 ```
 
 **La primera és la important.** Quan hi posis el teu arbre, comprovarà que llegir-lo
@@ -114,12 +119,27 @@ queden a la memòria cau, així que regenerar informes no costa cap petició.
 .venv/bin/python -m tools.match --live    # reports/match-report.md
 .venv/bin/python -m tools.frontier        # reports/frontier.md
 .venv/bin/python -m tools.worklist        # reports/worklist.md
+.venv/bin/python -m tools.estat           # reports/estat.md
 ```
 
 - **`match-report.md`** — qui és qui entre el teu arbre i FamilySearch.
-- **`frontier.md`** — a qui val la pena atacar, per ordre, i a quin arxiu.
+- **`frontier.md`** — a qui val la pena atacar, per ordre, i a quin arxiu. Cada
+  persona hi surt `ready` (FamilySearch ja en sap els pares), `stuck`
+  (FamilySearch també s'hi atura), `unknown` (no s'ha pogut comprovar, ni amb
+  pedigrí en viu ni amb la instantània de sota) o `unlinked` (encara no s'ha
+  trobat a FamilySearch).
 - **`worklist.md`** — enllaços de cerca per a les persones que només es poden
   resoldre anant als arxius.
+- **`estat.md`** — els comptadors de l'arbre (persones, famílies, generacions
+  d'avantpassats), calculats i no retipiats. `tools.lint --xifres` compara
+  aquests números amb el que digui el `README.md` a mà, si hi repeteixes cap.
+
+Cada cop que `tools.frontier` es pot connectar a FamilySearch amb credencials
+(`cache/pedigree.json`), desa a `reports/frontier-fs.json` una instantània de
+només els fets que l'informe imprimeix. Els dies que no hi ha credencials —a
+la CI, per exemple— `frontier.md` i `worklist.md` es refan igualment a partir
+d'aquesta instantània, en lloc de tractar tothom amb `_FSFTID` com si
+FamilySearch també s'hi haguera encallat.
 
 ### Generar propostes i acceptar-les
 
@@ -147,12 +167,19 @@ que carrega bé; ell recalcula la numeració de Sosa.
 ```
 
 Una entrada amb `accept: true` ja és a l'arbre i no la tornaràs a mirar, però es queda
-al fitxer i tapa les tres que sí que has de decidir. Això les mou a
-`reports/aplicades/` amb els comentaris inclosos.
+al fitxer i tapa les tres que sí que has de decidir. Una entrada amb `accept: false` ja
+és una decisió presa i té el mateix problema. `tools.archive` mou les primeres a
+`reports/aplicades/` i les segones a `reports/descartades/`, amb els comentaris
+inclosos; només `accept: null` es queda al fitxer.
 
-De passada tanca un parany: un fitxer que és tot `accept: true` té la mateixa pinta
-que un que està a punt de passar, i tornar-lo a passar per `tools.apply` insereix cada
-línia una segona vegada.
+De passada tanca un parany: un fitxer que és tot `accept: true` (o tot `accept: false`)
+té la mateixa pinta que un que està a punt de passar, i tornar-lo a passar per
+`tools.apply` o `tools.correct` insereix cada línia una segona vegada.
+
+`tools.research` no deixa de comptar una proposta rebutjada pel fet d'haver-la
+arxivat: mira tant `reports/candidates-*.yaml` com `reports/descartades/candidates-*.yaml`
+abans de tornar a proposar algú, així que un rebuig no torna a sortir la setmana
+següent només perquè `tools.archive` l'ha tret de la vista.
 
 ### Corregir el que ja hi és
 
@@ -160,6 +187,56 @@ línia una segona vegada.
 demana la línia **verbatim** i es nega a endevinar. És l'única eina que pot esborrar
 línies, i té guards per a això: no et deixarà esborrar un pare i deixar-hi els fills
 penjant, ni esborrar un `CHAN`, ni un registre sencer.
+
+## Mantenir-ho net: `tools/lint.py` i companyia
+
+| | |
+| --- | --- |
+| `tools.estat` | recompta persones, famílies, generacions d'avantpassats i rutes de `Fonts/` citades pel GEDCOM. Escriu `reports/estat.md` |
+| `tools.lint` | comprovacions que fallen, sense escriure mai cap prosa |
+| `tools.frontmatter` | valida el vocabulari `.md` de `Fonts/`: `tipus`, `classe`, `confiança`, `xrefs` |
+| `tools.assets` | inventari amb sha256 dels binaris de `Fonts/` i còpies de lectura reduïdes |
+| `tools.obsidian` | exporta una còpia del GEDCOM per a l'extensió obsidian-charted-roots |
+
+Un número copiat a mà a una prosa se't desfasa la primera vegada que l'arbre canvia, i
+pot desfasar-se **dues vegades a la mateixa prosa** sense que ningú se n'adoni, perquè
+res compara les dues mencions entre elles. `tools.estat` calcula els números un sol cop
+i `tools.lint --xifres` compara qualsevol fila `| Etiqueta | número |` del teu
+`README.md` que faci servir la mateixa etiqueta que `reports/estat.md` — si en poses
+cap, no cal fer-hi res més.
+
+```bash
+.venv/bin/python -m tools.lint                # totes les comprovacions
+.venv/bin/python -m tools.lint --xifres        # xifres desfasades al README
+.venv/bin/python -m tools.lint --rutes         # rutes de Fonts/ que el GEDCOM cita i no existeixen
+.venv/bin/python -m tools.lint --xrefs         # un @I00001@ que anomena algú altre al costat
+.venv/bin/python -m tools.lint --cr-id         # cap fitxa no arma cap connector d'Obsidian
+.venv/bin/python -m tools.lint --frontmatter   # el vocabulari de tools.frontmatter, sencer
+.venv/bin/python -m tools.lint --privacitat    # binaris seguits sota Fonts/, i el repositori és privat?
+.venv/bin/python -m tools.lint --duplicacio    # reports/duplicacio.md: text idèntic en diversos fitxers
+.venv/bin/python -m tools.lint --informes      # frontier.md i worklist.md concorden amb el GEDCOM
+```
+
+Si fas servir les fitxes `.md` de `Fonts/` amb Obsidian, `tools.frontmatter` és el que
+en manté el vocabulari coherent: quin `tipus` de fitxa és, de quina `classe` és la font
+—**un índex no és una segona lectura independent del manuscrit**—, i quins `xrefs`
+declara. Un document que declara qui hi surt es pren **al peu de la lletra**: sense
+això, `tools.frontier` ha d'endevinar-ho pel nom del fitxer, i endevinar-ho és el que
+pot acreditar un avantpassat amb el bateig del seu propi net perquè comparteixen
+cognom. Quins arxius acceptes al camp `arxiu:` és cosa teva: `config.yaml`, a
+`frontmatter: arxius:`, ve buit i, mentre ho estigui, `tools.frontmatter --check`
+accepta qualsevol valor.
+
+`tools.assets` és per a qui guarda escanejos i fotografies dins de `Fonts/`: separa els
+originals (irreemplaçables o refetibles d'un arxiu) de còpies de lectura reduïdes que sí
+que val la pena tenir al repositori. **Aquesta plantilla, tal com ve, només versiona els
+`.md`** —mira-ho al `.gitignore` i a `Fonts/00 LLEGIU-ME.md`—, així que l'eina només et
+fa falta si decideixes relaxar aquesta política per als teus propis binaris.
+
+`tools.obsidian` no toca l'arbre canònic: escriu una còpia amb els llocs replegats a una
+cadena separada per comes, perquè el connector d'Obsidian **obsidian-charted-roots**
+encara no entén el format de sis nivells que fa servir Ancestris i, sense això, pot
+escriure fitxes amb un `PLAC` que no és YAML vàlid.
 
 ## L'índex diocesà de València: `tools/apv/`
 
@@ -260,11 +337,13 @@ programes lliures que parlen amb FamilySearch, i s'espatlla cada sis o dotze mes
 canvien alguna cosa. Si un dia falla, entra amb el navegador, copia el testimoni d'una
 petició a l'API i passa'l amb `--token`.
 
-**`_SOSADABOVILLE` no es toca.** Ancestris el regenera en desar. El que no arregla és que
-n'escriu **duplicats**: la mateixa persona acaba amb la mateixa numeració repetida, i cada
-desat n'afig una còpia més. Cap eina d'aquí no les llegeix i no fan mal a res, però és una
-fuita lenta. Si algun dia molesta, es netegen amb un `tools.correct` que hi deixe una sola
-línia per valor; el que no s'ha de fer és esperar que Ancestris ho faça.
+**`_SOSADABOVILLE` no es llegeix, però sí que es neteja en desar.** Ancestris el
+regenera cada vegada que desa i n'escriu **duplicats**: la mateixa persona acaba amb la
+mateixa numeració repetida, i cada desat n'afig una còpia més. Cap eina d'aquí no els
+llegeix i no fan mal a res, però és una fuita lenta. `tools.apply` i `tools.correct`
+deixen només l'última línia de cada registre —la que Ancestris creu ara mateix— cada
+cop que escriuen el fitxer, i ho diuen a la sortida quan en descarten cap; el que no
+s'ha de fer és esperar que Ancestris ho faça.
 
 ## Llicència
 

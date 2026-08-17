@@ -233,16 +233,21 @@ def previously_rejected(reports: Path) -> dict[str, str]:
     Without this, a proposal refuted by an actual parish record comes back on the
     next run looking respectable, and might be accepted by mistake the second
     time. A rejection is a decision and has to survive.
+
+    `tools.archive` moves decided `accept: false` entries out of
+    `reports/candidates-*.yaml` into `reports/descartades/candidates-*.yaml`
+    once they've been read here, so both places are scanned.
     """
     out: dict[str, str] = {}
-    for path in sorted(reports.glob("candidates-*.yaml")):
-        try:
-            entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-        except yaml.YAMLError:
-            continue
-        for entry in entries:
-            if isinstance(entry, dict) and entry.get("accept") is False:
-                out[str(entry.get("target", "")).strip("@")] = path.name
+    for folder in (reports, reports / "descartades"):
+        for path in sorted(folder.glob("candidates-*.yaml")):
+            try:
+                entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+            except yaml.YAMLError:
+                continue
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("accept") is False:
+                    out[str(entry.get("target", "")).strip("@")] = path.name
     return out
 
 

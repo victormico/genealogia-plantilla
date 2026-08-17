@@ -26,7 +26,7 @@ import yaml
 
 from .config import tree_path
 from .fs.fetch import LiveTree
-from .gedcom.lines import GedcomFile
+from .gedcom.lines import SOSA_TAG, GedcomFile, dedupe_sosa
 from .gedcom.splice import Splicer
 from .people import load_people
 from .render import PlaceBook, render_family, render_individual, render_source
@@ -489,16 +489,24 @@ def main() -> int:
         print("nothing to apply")
         return 0
 
-    after = splicer.apply()
+    # Both sides are compared with the Ancestris d'Aboville duplicates already
+    # removed, so the additive guard below still means what it says. Dropping
+    # them is not this proposal's doing and must not read as one of its
+    # deletions -- it is reported on its own line instead.
+    before, dropped = dedupe_sosa(ged.raw)
+    after, _ = dedupe_sosa(splicer.apply())
+    if dropped:
+        print(f"  {len(dropped)} duplicate {SOSA_TAG} line(s) dropped on write")
+
     if not args.quiet:
-        removed = show_diff(ged.raw, after, ged.path.name)
+        removed = show_diff(before, after, ged.path.name)
         if removed:
             print(f"\nREFUSING: the diff removes {removed} lines; this must be additive")
             return 1
 
     print(
         f"\n{applied} change(s) to {ged.path.name}: "
-        f"+{len(after) - len(ged.raw)} lines, no deletions"
+        f"+{len(after) - len(before)} lines, no deletions"
     )
     if not args.write:
         print("dry run — pass --write to apply")

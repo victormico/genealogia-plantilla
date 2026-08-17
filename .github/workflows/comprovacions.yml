@@ -1,0 +1,100 @@
+# Les proves i les comprovacions, contra l'arbre que hi hagi (l'exemple, si
+# encara no has posat el teu).
+#
+# `tools.lint --privacitat` no hi és a posta: demana `gh repo view` i, en un
+# repositori nou fet a partir d'aquesta plantilla, sovint encara no hi ha res
+# tracked sota `Fonts/` per comprovar. Un cop en tinguis, afig-lo aquí.
+
+name: Comprovacions
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  proves:
+    name: Proves i comprovacions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Proves
+        run: |
+          set -euo pipefail
+          python -m tools.tests.test_gedcom
+          python -m tools.tests.test_render
+          python -m tools.tests.test_estat
+          python -m tools.tests.test_frontmatter
+          python -m tools.tests.test_obsidian
+          python -m tools.tests.test_frontier
+          python -m tools.tests.test_adg
+          python -m tools.tests.test_apv
+          python -m tools.tests.test_fs
+
+      - name: Comprovacions
+        run: |
+          set -euo pipefail
+          python -m tools.lint --xifres
+          python -m tools.lint --rutes
+          python -m tools.lint --xrefs
+          python -m tools.lint --cr-id
+          python -m tools.lint --frontmatter
+          python -m tools.lint --informes
+
+  informes:
+    name: Què refarà el merge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Informatiu i prou: qui ho arregla de veritat és el workflow «Informes»,
+      # que els refà i els comet tot sol quan la PR entra a `main`. Això només
+      # ensenya per endavant què tocarà.
+      - name: Refer-los i mirar què canviaria
+        run: |
+          set -uo pipefail
+          python -m tools.estat > /dev/null 2>&1 || true
+          python -m tools.frontier > /dev/null 2>&1
+          python -m tools.worklist > /dev/null 2>&1
+          python -m tools.lint --duplicacio > /dev/null 2>&1
+
+          if git diff --quiet -- reports/; then
+            echo "Els informes comesos ja estan al dia." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "## Els informes comesos han quedat enrere"
+            echo
+            echo "En fer el merge es refaran i es cometran sols. Si ho vols dins"
+            echo "d'aquesta PR, executa-ho i puja-ho:"
+            echo
+            echo '```bash'
+            echo "python -m tools.estat"
+            echo "python -m tools.frontier"
+            echo "python -m tools.worklist"
+            echo "python -m tools.lint --duplicacio"
+            echo '```'
+            echo
+            echo '```'
+            git diff --stat -- reports/
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
