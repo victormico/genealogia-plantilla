@@ -240,8 +240,10 @@ escriure fitxes amb un `PLAC` que no és YAML vàlid.
 
 ## L'índex diocesà de València: `tools/apv/`
 
-Només et fa falta si investigues a la diòcesi de València. **És la font amb el sostre
-més baix: quinze consultes al dia**, i és l'arxiu qui les compta.
+Només et fa falta si investigues a la diòcesi de València. **No té cap sostre
+confirmat** —una xifra de «quinze al dia» va circular durant un temps, però venia
+d'un correu, no del lloc, i es va descartar. El que hi ha és un pas propi que
+avisa sense aturar-se.
 
 ```bash
 .venv/bin/python -m tools.apv.verify              # el pla, sense demanar res
@@ -255,9 +257,9 @@ documentat es diu al `config.yaml`, a `apv: terra_documentada:`.
 
 Tres coses que val la pena saber abans de tocar-ho:
 
-- **El sostre de 15/dia és al codi, amb comptador persistent** a `cache/apv-quota.json`,
-  datat, i **el compte de l'arxiu manda sobre el nostre**. Un sostre que es reinicia amb
-  el procés no és un sostre.
+- **No hi ha sostre confirmat de l'arxiu.** El que queda és un pas propi (40/dia per
+  defecte) amb comptador persistent a `cache/apv-quota.json`, datat, que avisa sense
+  aturar-se i que cedeix davant el compte de l'arxiu si mai en declara un de real.
 - **Pregunta primer la cobertura, que és gratis.** `tools/apv/coverage.py` sap quins anys
   té indexats cada parròquia. Quan el bateig cau en un forat, **el camí és el matrimoni**:
   una fitxa de matrimoni dona els pares i els quatre avis de qui busques.

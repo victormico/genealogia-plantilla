@@ -67,7 +67,7 @@ Els padrons d'habitants arriben al 1936 i són molt bons per situar una família
 
 ## Ontinyent i la Vall d'Albaida — arxius parroquials valencians
 
-L'accés va pel Servei Diocesà d'Arxius Parroquials de València, que té un índex en línia amb un sostre de quinze consultes al dia — vegeu `tools/apv/`. Per als llibres mateixos, i per al que l'índex no cobreix, cal l'Arxiu Diocesà de València.
+L'accés va pel Servei Diocesà d'Arxius Parroquials de València, que té un índex en línia sense cap sostre confirmat — vegeu `tools/apv/`. Per als llibres mateixos, i per al que l'índex no cobreix, cal l'Arxiu Diocesà de València.
 
 Compte amb els llogarets: un poble que no va tenir parròquia pròpia fins al segle XIX té els bateigs antics dins dels quinque libri de la parròquia mare, i cercar-los pel seu nom no dona res.
 
