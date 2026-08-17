@@ -213,6 +213,35 @@ apv:
   edat_de_casar: 24
 
 # ---------------------------------------------------------------------------
+# L'estat de l'arbre (tools/estat.py) i les comprovacions (tools/lint.py)
+# ---------------------------------------------------------------------------
+#
+# Res a omplir per començar: sense «arrel», tools.estat compta les generacions
+# des de qui té `_SOSADABOVILLE 1`, que és qui l'Ancestris ja marca com a
+# de cuius.
+
+estat:
+  # L'xref (p. ex. I00001) des d'on comptar les generacions d'avantpassats, si
+  # vols que sigui algú que no és el número 1 de Sosa.
+  arrel: ""
+
+# ---------------------------------------------------------------------------
+# El vocabulari de les fitxes .md (tools/frontmatter.py)
+# ---------------------------------------------------------------------------
+#
+# `tools.frontmatter --check` valida el camp `arxiu:` de cada fitxa contra
+# aquesta llista. Buida, com ve, accepta qualsevol valor; un cop hi poses
+# res, només accepta el que hi hagi.
+
+frontmatter:
+  arxius: {}
+  # arxius:
+  #   apv: Arxiu Parroquial de València (índex del Servei Diocesà)
+  #   adg: Arxiu Diocesà de Girona
+  #   rci: Registre Civil
+  #   fam: de casa — memòria, quadres, fotografies
+
+# ---------------------------------------------------------------------------
 # El catàleg de l'Arxiu Diocesà de Girona (tools/adg/)
 # ---------------------------------------------------------------------------
 #

@@ -277,6 +277,29 @@ def region_for(town: str, place: str) -> str:
     return UNPLACED
 
 
+def estat_root() -> str | None:
+    """The xref to count ancestor generations from, for `tools.estat`.
+
+    Unset means "the person with `_SOSADABOVILLE 1`" -- the de cuius that
+    Ancestris itself designates -- which is the right default for the common
+    case of counting one person's own ancestry and needs no editing.
+    """
+    root = get("estat", "arrel")
+    return str(root) if root else None
+
+
+def frontmatter_archives() -> dict[str, str]:
+    """`Fonts/` short code -> the archive's full name, for `tools.frontmatter`.
+
+    Empty until you fill it in. `tools.frontmatter --check` only validates a
+    note's `arxiu:` key against this list once it has entries, so the template
+    does not reject anything before you have decided what to call your own
+    archives.
+    """
+    raw = get("frontmatter", "arxius", default={}) or {}
+    return {str(k): str(v) for k, v in raw.items()}
+
+
 def archive_hint(town: str, place: str) -> tuple[int, str]:
     """How reachable this town's registers are (0-5), and a line saying where.
 

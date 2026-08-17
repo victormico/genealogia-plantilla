@@ -297,6 +297,7 @@
 4 LATI N38.82167
 4 LONG W0.60694
 1 FAMS @F00007@
+1 _FSFTID KXQ2-8YT
 1 CHAN
 2 DATE 30 JUL 2026
 3 TIME 10:00:00
@@ -425,7 +426,7 @@
 1 PUBL https://www.familysearch.org/tree/
 0 @S00002@ SOUR
 1 TITL Arxiu Parroquial (exemple)
-1 TEXT Exemple de com se cita una transcripció: la ruta apunta a Fonts/, i moure el fitxer trenca la citació sense avisar. Vegeu Fonts/00 LLEGIU-ME.md.
+1 TEXT Exemple de com se cita una transcripció: la ruta apunta a Fonts/00 LLEGIU-ME.md, i moure'l trenca la citació sense avisar.
 0 @N00001@ NOTE Nota d'exemple. Un registre NOTE de nivell 0 es pot compartir entre persones; les notes curtes van dins del registre.
 1 CHAN
 2 DATE 30 JUL 2026

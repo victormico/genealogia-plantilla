@@ -1,0 +1,112 @@
+# Recerca automàtica a FamilySearch: baixa el pedigrí amb el teu compte,
+# refà els informes que en depenen i escriu noves propostes a
+# reports/candidates-<data>.yaml.
+#
+# No toca el GEDCOM ni `main` directament -- res no ho fa mai sol, ni aquest
+# workflow -- i s'obre com a PR perquè les propostes esperen la teva decisió
+# (accept: true/false/null) igual que si les haguessis generat en local.
+#
+# Credencials: FAMILY_SEARCH_USERNAME i FAMILY_SEARCH_PASSWORD com a repository
+# secrets (Settings > Secrets and variables > Actions). Sense elles el pas de
+# sessió falla d'entrada amb un missatge clar, abans de gastar cap petició.
+#
+# L'arrel de qui baixar l'ascendència ve del `config.yaml` («familysearch:
+# arrel:»); el camp «root» de sota només fa falta per fer una prova puntual
+# amb una altra persona.
+
+name: Recerca FamilySearch
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # dilluns 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      root:
+        description: "Xref arrel de FamilySearch (buit = el del config.yaml)"
+        default: ''
+      top:
+        description: "Quants fronts de recerca (tools.research --top)"
+        default: '5'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: recerca-familysearch
+  cancel-in-progress: false
+
+jobs:
+  recerca:
+    runs-on: ubuntu-latest
+    env:
+      FAMILY_SEARCH_USERNAME: ${{ secrets.FAMILY_SEARCH_USERNAME }}
+      FAMILY_SEARCH_PASSWORD: ${{ secrets.FAMILY_SEARCH_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Comprovar la sessió
+        run: python -m tools.fs.session --whoami
+
+      - name: Baixar el pedigrí
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.root }}" ]; then
+            python -m tools.fs.fetch --root "${{ inputs.root }}"
+          else
+            python -m tools.fs.fetch
+          fi
+
+      - name: Refer els informes que en depenen
+        run: |
+          set -euo pipefail
+          python -m tools.match --live
+          python -m tools.frontier
+          python -m tools.worklist
+
+      - name: Generar propostes noves
+        run: >-
+          python -m tools.research
+          --top "${{ inputs.top || '5' }}"
+          --depth 2
+
+      - name: Obrir una PR si hi ha res de nou
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- reports/; then
+            echo "Res de nou: cap informe ni proposta ha canviat." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          data="$(date +%Y-%m-%d)"
+          branch="fs-recerca-${data}-${GITHUB_RUN_NUMBER}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add reports/
+          git commit -m "Recerca automàtica de FamilySearch, ${data}"
+          git push origin "$branch"
+
+          {
+            echo "## Propostes noves"
+            echo
+            echo '```'
+            git diff --stat HEAD^ -- reports/
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          gh pr create \
+            --title "Recerca FamilySearch, ${data}" \
+            --body "Informes refets i propostes noves a \`reports/candidates-${data}.yaml\`. Revisa-les amb \`reports/frontier.md\` al costat abans de decidir \`accept\`." \
+            --head "$branch" \
+            --base main

@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from . import config
+from . import config, report
 from .config import tree_path
-from .frontier import FrontierEntry, build
+from .frontier import FrontierEntry, SNAPSHOT, build, snapshot_load
 from .fs.fetch import LiveTree
 from .normalize import fold
 from .people import Tree
@@ -84,7 +84,28 @@ def search_links(entry: FrontierEntry) -> list[tuple[str, str]]:
     return links
 
 
-def write_report(entries: list[FrontierEntry], path: Path, only: str | None = None) -> None:
+def _provenance(live: LiveTree | None, snapshot: dict | None) -> str:
+    """One line saying where the FamilySearch classification came from."""
+    if live:
+        return "FamilySearch: pedigrí fresc de `cache/pedigree.json`."
+    if snapshot:
+        return (
+            f"FamilySearch: instantània de `reports/frontier-fs.json`, del "
+            f"{snapshot.get('data', '?')}."
+        )
+    return (
+        "FamilySearch: no s'ha pogut consultar (ni `cache/pedigree.json` ni "
+        "`reports/frontier-fs.json`). Executa `python -m tools.fs.fetch` per refer-la."
+    )
+
+
+def write_report(
+    entries: list[FrontierEntry],
+    path: Path,
+    live: LiveTree | None = None,
+    snapshot: dict | None = None,
+    only: str | None = None,
+) -> None:
     grouped: dict[str, list[FrontierEntry]] = {}
     for entry in entries:
         if entry.status == "ready":
@@ -102,6 +123,10 @@ def write_report(entries: list[FrontierEntry], path: Path, only: str | None = No
 
     lines = [
         "# Llista de feina als arxius",
+        "",
+        "**Generat per `python -m tools.worklist`. No s'edita a mà.**",
+        "",
+        _provenance(live, snapshot),
         "",
         f"**{total} persones** que FamilySearch no pot resoldre, agrupades per",
         "l'arxiu on cal anar a buscar-les.",
@@ -153,6 +178,11 @@ def write_report(entries: list[FrontierEntry], path: Path, only: str | None = No
             lines.append(f"- {', '.join(facts) if facts else 'sense dates ni lloc'}")
             if entry.status == "stuck":
                 lines.append("- FamilySearch la té però no en sap els pares")
+            elif entry.status == "unknown":
+                lines.append(
+                    "- Enllaçada amb FamilySearch, però no s'ha pogut comprovar si en "
+                    "sap els pares (cal `python -m tools.fs.fetch`)"
+                )
             else:
                 lines.append("- Encara no s'ha trobat a FamilySearch")
             for doc in entry.documents:
@@ -161,13 +191,14 @@ def write_report(entries: list[FrontierEntry], path: Path, only: str | None = No
                 lines.append(f"- [{label}]({url})")
             lines.append("")
 
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    report.write(path, "\n".join(lines) + "\n")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--canonical", default=None)
     parser.add_argument("--pedigree", default=PEDIGREE)
+    parser.add_argument("--snapshot", default=SNAPSHOT)
     parser.add_argument("--region", choices=sorted(config.region_guides()),
                         help="només aquesta regió")
     args = parser.parse_args()
@@ -178,10 +209,13 @@ def main() -> int:
     if path.exists():
         live = LiveTree.from_json(json.loads(path.read_text(encoding="utf-8")))
 
-    entries = build(canon, live)
+    snapshot_path = Path(args.snapshot)
+    snapshot = None if live else snapshot_load(snapshot_path)
+
+    entries = build(canon, live, snapshot)
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / "worklist.md"
-    write_report(entries, out, args.region)
+    write_report(entries, out, live, snapshot, args.region)
 
     guides = config.region_guides()
     counts: dict[str, int] = {}
