@@ -27,6 +27,12 @@ on:
       top:
         description: "Quants fronts de recerca (tools.research --top)"
         default: '5'
+      targets:
+        description: "Xrefs concrets a investigar, separats per comes (substitueix --top)"
+        default: ''
+      depth:
+        description: "Generacions per amunt dels pares a proposar (tools.research --depth)"
+        default: '2'
 
 permissions:
   contents: write
@@ -73,10 +79,38 @@ jobs:
           python -m tools.worklist
 
       - name: Generar propostes noves
-        run: >-
-          python -m tools.research
-          --top "${{ inputs.top || '5' }}"
-          --depth 2
+        run: |
+          set -euo pipefail
+          targets="${{ inputs.targets || '' }}"
+          depth="${{ inputs.depth || '2' }}"
+          if [ -n "$targets" ]; then
+            IFS=',' read -ra xrefs <<< "$targets"
+            for xref in "${xrefs[@]}"; do
+              python -m tools.research --target "${xref// /}" --depth "$depth"
+            done
+          else
+            python -m tools.research --top "${{ inputs.top || '5' }}" --depth "$depth"
+          fi
+
+      - name: Tornar a escriure els informes sense credencials
+        # Els dos passos d'amunt generen frontier.md/worklist.md amb
+        # cache/pedigree.json present -- l'únic entorn que hi té accés és
+        # aquest, amb els secrets de FAMILY_SEARCH_*. `tools.lint --informes`
+        # a Comprovacions no els té mai, o siga que sempre recalcularia un
+        # text de procedència diferent («instantània de frontier-fs.json» en
+        # lloc de «pedigrí fresc») i qualsevol PR d'aquest workflow fallaria
+        # la comprovació sense que hi hagués cap dada real en desacord.
+        #
+        # El pas d'amunt ja ha deixat reports/frontier-fs.json fresc (el
+        # pedigrí en viu s'hi escriu quan es genera frontier.md amb ell
+        # present), o siga que amagar cache/pedigree.json i tornar a generar
+        # dona la mateixa classificació però amb el text que Comprovacions sí
+        # que pot reproduir arreu.
+        run: |
+          set -euo pipefail
+          mv cache/pedigree.json cache/pedigree.json.viu
+          python -m tools.frontier
+          python -m tools.worklist
 
       - name: Obrir una PR si hi ha res de nou
         run: |
