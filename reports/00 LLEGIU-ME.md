@@ -1,11 +1,10 @@
 # Informes
 
-Gairebé tot el que hi ha aquí **es regenera**, i per tant no s'edita a mà. L'excepció
-és `pendents.md`, que és el que diu per on continuar i s'escriu a mà.
+Tot el que hi ha aquí **es regenera**, i per tant no s'edita a mà. Per on continuar
+viu com a issues del teu repositori a GitHub, no com a fitxer: vegeu el README.
 
 | Fitxer | Qui l'escriu | Què és |
 | --- | --- | --- |
-| `pendents.md` | **tu** | l'estat i el següent pas. Comença per aquí |
 | `frontier.md` | `tools.frontier` | a qui val la pena atacar, per ordre, i a quin arxiu |
 | `worklist.md` | `tools.worklist` | enllaços de cerca per als que només es resolen anant a l'arxiu |
 | `match-report.md` | `tools.match` | qui és qui entre el teu arbre i FamilySearch |

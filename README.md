@@ -19,8 +19,17 @@ exactament què ha canviat.
 | `exemple.ged` | un arbre inventat de 18 persones, per veure què fa cada eina abans de posar-hi les teves dades |
 | `tools/` | les eines. Cap no porta cap nom ni cap poble escrit al codi |
 | `Fonts/` | l'estructura per a les fonts, amb les instruccions. Comença per **`Fonts/00 LLEGIU-ME.md`** |
-| `reports/` | on surten els informes. Comença per **`reports/pendents.md`** |
+| `reports/` | on surten els informes generats. Els `.yaml` que hi queden són **només els que esperen una decisió teva** |
 | `.github/workflows/` | la CI: proves a cada PR, informes refets a cada merge, recerca setmanal opcional |
+
+**El que queda per fer viu com a issues del teu repositori a GitHub, no com a fitxer.**
+Un pendents.md escrit a mà —diari de tot el que ja s'ha fet barrejat amb el que
+queda— es desfasa de seguida perquè cap eina el manté al dia; un issue es tanca
+quan la feina és feta i prou. Els `.yaml` de `reports/` que esperen una decisió
+(vegeu «Generar propostes i acceptar-les» més avall) continuen sent l'eina de
+treball dia a dia; els issues són per fer-ne el seguiment i per a tot el que no
+és una proposta concreta al GEDCOM —un viatge a un arxiu, una decisió sobre una
+hipòtesi, una tasca de manteniment del repositori.
 
 ## Comença aquí
 
