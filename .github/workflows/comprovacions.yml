@@ -41,6 +41,8 @@ jobs:
           python -m tools.tests.test_adg
           python -m tools.tests.test_apv
           python -m tools.tests.test_fs
+          python -m tools.tests.test_match
+          python -m tools.tests.test_research
 
       - name: Comprovacions
         run: |
