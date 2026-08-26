@@ -28,7 +28,14 @@ from pathlib import Path
 import yaml
 
 from .config import tree_path
-from .frontier import FrontierEntry, build, index_documents, documents_for
+from .frontier import (
+    SNAPSHOT,
+    FrontierEntry,
+    build,
+    documents_for,
+    index_documents,
+    snapshot_load,
+)
 from .fs.api import Api
 from .fs.fetch import LiveTree
 from .fs.session import add_common_args, build_session
@@ -59,10 +66,12 @@ def person_block(p: Person, documents: list[str] | None = None) -> dict:
     return {k: v for k, v in block.items() if v not in (None, "", [])}
 
 
-def upstream_chain(live: LiveTree, pid: str, known: set[str], depth: int) -> list[list[Person]]:
-    """Ancestors above `pid`, level by level, excluding people already in the tree."""
+def upstream_chain(
+    live: LiveTree, start: list[str], known: set[str], depth: int
+) -> list[list[Person]]:
+    """Ancestors above `start`, level by level, excluding people already in the tree."""
     levels: list[list[Person]] = []
-    frontier, seen = [pid], set(known)
+    frontier, seen = list(start), set(known)
     for _ in range(depth):
         nxt: list[Person] = []
         for person in frontier:
@@ -143,7 +152,8 @@ def propose_parents(
     }
 
     if depth > 1:
-        levels = upstream_chain(live, p.fsftid, known | {q.xref for q in parents}, depth - 1)
+        starting = [q.xref for q in parents]
+        levels = upstream_chain(live, starting, known | set(starting), depth - 1)
         if levels:
             proposal["ancestors"] = [
                 [person_block(q) for q in level] for level in levels
@@ -290,11 +300,28 @@ def main() -> int:
 
     canon = Tree(args.canonical or tree_path())
     path = Path(args.pedigree)
-    if not path.exists():
-        print(f"no pedigree at {path}; run tools.fs.fetch first", file=sys.stderr)
-        return 2
-    live = LiveTree.from_json(json.loads(path.read_text(encoding="utf-8")))
-    entries = build(canon, live)
+    snapshot = None
+    if path.exists():
+        live = LiveTree.from_json(json.loads(path.read_text(encoding="utf-8")))
+    else:
+        # No credentials fetched today: fall back to the committed snapshot of
+        # already-known parents, same as tools.frontier does without a live
+        # pedigree. It only carries direct parents, not the grandparents a
+        # deeper proposal would need, so depth is capped at 1 here.
+        live = None
+        snapshot = snapshot_load(SNAPSHOT)
+        if snapshot is None:
+            print(
+                f"no pedigree at {path} and no snapshot at {SNAPSHOT}; "
+                "run tools.fs.fetch first",
+                file=sys.stderr,
+            )
+            return 2
+        print(f"no pedigree at {path}; working from {SNAPSHOT} instead", file=sys.stderr)
+        if args.depth > 1:
+            print("  (snapshot has no ancestors above the parents; using --depth 1)", file=sys.stderr)
+            args.depth = 1
+    entries = build(canon, live, snapshot)
     docs = index_documents()
     known = {p.fsftid for p in canon.people.values() if p.fsftid}
 
@@ -357,6 +384,8 @@ def main() -> int:
 
     REPORTS.mkdir(exist_ok=True)
     out = Path(args.out) if args.out else REPORTS / f"candidates-{date.today().isoformat()}.yaml"
+    if not out.is_absolute():
+        out = ROOT / out
     if out.exists() and not args.overwrite:
         # An existing file is the record of what was already reviewed and applied.
         # Clobbering it would erase that, so number a new one instead.
