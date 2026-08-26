@@ -63,10 +63,18 @@ jobs:
         run: python -m tools.fs.session --whoami
 
       - name: Baixar el pedigrí
+        # Els valors que escriu qui llança el workflow van per `env:` i no
+        # interpolats dins del `run:`. Un `${{ inputs.x }}` s'expandeix com a
+        # TEXT abans que bash llegisca res, o siga que un valor com
+        # `x"; curl … | sh; #` deixa de ser un argument i passa a ser una ordre
+        # més, en una feina que té `contents: write`, `pull-requests: write` i
+        # els secrets de FamilySearch a l'entorn. Per `env:` arriba com a dada.
+        env:
+          ROOT: ${{ inputs.root }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.root }}" ]; then
-            python -m tools.fs.fetch --root "${{ inputs.root }}"
+          if [ -n "$ROOT" ]; then
+            python -m tools.fs.fetch --root "$ROOT"
           else
             python -m tools.fs.fetch
           fi
@@ -79,17 +87,21 @@ jobs:
           python -m tools.worklist
 
       - name: Generar propostes noves
+        # Igual que a «Baixar el pedigrí»: per `env:`, mai interpolats al `run:`.
+        env:
+          TARGETS: ${{ inputs.targets }}
+          DEPTH: ${{ inputs.depth }}
+          TOP: ${{ inputs.top }}
         run: |
           set -euo pipefail
-          targets="${{ inputs.targets || '' }}"
-          depth="${{ inputs.depth || '2' }}"
-          if [ -n "$targets" ]; then
-            IFS=',' read -ra xrefs <<< "$targets"
+          depth="${DEPTH:-2}"
+          if [ -n "${TARGETS:-}" ]; then
+            IFS=',' read -ra xrefs <<< "$TARGETS"
             for xref in "${xrefs[@]}"; do
               python -m tools.research --target "${xref// /}" --depth "$depth"
             done
           else
-            python -m tools.research --top "${{ inputs.top || '5' }}" --depth "$depth"
+            python -m tools.research --top "${TOP:-5}" --depth "$depth"
           fi
 
       - name: Tornar a escriure els informes sense credencials
