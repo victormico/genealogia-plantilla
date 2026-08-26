@@ -44,3 +44,9 @@ Homepage = "https://github.com/victormico/genealogia-plantilla"
 # Només les eines. `Fonts/`, `reports/` i l'arbre d'exemple són la plantilla,
 # no el paquet: qui se l'instal·la ja té els seus.
 include = ["tools*"]
+
+[tool.setuptools.package-data]
+# L'arbre d'exemple viatja dins del paquet. Les proves de valors hi fixen
+# números de veritat, i en un repositori de família no hi ha cap `exemple.ged`
+# a l'arrel: sense aquesta còpia es saltarien totes i no dirien res.
+"tools.tests" = ["exemple.ged"]

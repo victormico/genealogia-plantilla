@@ -31,8 +31,8 @@ from tools.frontier import declared_documents, documents_for, guess_disagreement
 from tools.lint import Report, check_xrefs
 from tools.people import Tree
 
-from tools.config import ROOT
-CANONICAL = ROOT / "exemple.ged"
+from tools.config import ROOT, example_tree
+CANONICAL = example_tree()
 
 _failures: list[str] = []
 

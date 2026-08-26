@@ -19,8 +19,8 @@ from tools.estat import Estat, render
 from tools.lint import Report, check_cr_id, check_rutes, check_xifres
 from tools.people import Tree
 
-from tools.config import ROOT
-CANONICAL = ROOT / "exemple.ged"
+from tools.config import ROOT, example_tree
+CANONICAL = example_tree()
 
 _failures: list[str] = []
 
@@ -189,49 +189,45 @@ def test_break_it_on_purpose(estat: Estat) -> None:
     sap dir quin fitxer i quina línia, no només que hi ha un problema.
     """
     print("\ntrencant-ho a posta")
-    readme = ROOT / "README.md"
-    if not readme.exists():
-        check(False, "README.md hi és", "no s'ha trobat")
-        return
-    original = readme.read_text(encoding="utf-8")
 
-    baseline = Report()
-    check_xifres(estat, baseline)
-    check(not baseline.problems, "de partida no hi ha cap xifra desfasada",
-          "; ".join(baseline.problems[:3]))
+    # In a temporary directory, never in the repository this happens to be
+    # installed into: a test that rewrites somebody's README and restores it
+    # afterwards is one interrupted run away from losing their file.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        readme = root / "README.md"
+        original = "# Prova\n\nUna taula d'estat:\n\n|  |  |\n| --- | --- |\n"
+        readme.write_text(original, encoding="utf-8")
 
-    wrong_row = f"| Persones a l'arbre | {estat.people - 1} |"
+        baseline = Report()
+        check_xifres(estat, baseline, root=root)
+        check(not baseline.problems, "de partida no hi ha cap xifra desfasada",
+              "; ".join(baseline.problems[:3]))
 
-    try:
+        wrong_row = f"| Persones a l'arbre | {estat.people - 1} |"
         readme.write_text(original + f"\n{wrong_row}\n", encoding="utf-8")
         collected = Report()
-        check_xifres(estat, collected)
+        check_xifres(estat, collected, root=root)
         named = [p for p in collected.problems if "Persones a l'arbre" in p]
         check(bool(named), "--xifres falla i anomena la fila")
         check(any("README.md:" in p for p in named),
               "i diu el fitxer i la línia", str(named[:1]))
-    finally:
-        readme.write_text(original, encoding="utf-8")
 
-    # The other half of --xifres: a generation row, whose total is not a number
-    # anybody should be typing either. G6 has 2**5 = 32 slots whatever the tree.
-    filled, _ = estat.generation(6)
-    try:
+        # The other half: a generation row, whose total is not a number anybody
+        # should be typing either. G6 has 2**5 = 32 slots whatever the tree.
+        filled, _ = estat.generation(6)
         readme.write_text(
             original + f"\n| Sisena generació | **{filled + 1} de 32** |\n",
             encoding="utf-8",
         )
         collected = Report()
-        check_xifres(estat, collected)
+        check_xifres(estat, collected, root=root)
         named = [p for p in collected.problems if "Sisena generació" in p]
         check(bool(named), "--xifres comprova també les files de generació",
               "; ".join(collected.problems[:3]))
         check(any(f"{filled} de 32" in p for p in named),
               "i diu quantes caselles són de veres", str(named[:1]))
-    finally:
-        readme.write_text(original, encoding="utf-8")
 
-    check(readme.read_text(encoding="utf-8") == original, "s'ha restaurat el README")
 
 
 def test_render_is_deterministic(estat: Estat) -> None:

@@ -19,8 +19,8 @@ from pathlib import Path
 from tools.gedcom.lines import GedcomFile
 from tools.render import PlaceBook, render_date, render_individual, render_name
 
-from tools.config import ROOT
-EXAMPLE = ROOT / "exemple.ged"
+from tools.config import ROOT, example_tree
+EXAMPLE = example_tree()
 
 _failures: list[str] = []
 

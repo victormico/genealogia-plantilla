@@ -33,8 +33,8 @@ from tools.frontier import (
 from tools.people import Person, Tree
 from tools.worklist import write_report as worklist_write_report
 
-from tools.config import ROOT
-CANONICAL = ROOT / "exemple.ged"
+from tools.config import ROOT, example_tree
+CANONICAL = example_tree()
 
 # I00016 (Rita VIVES ALCARAZ) is exemple.ged's one leaf that carries an
 # _FSFTID, which is what makes it possible to exercise ready/stuck/unknown at

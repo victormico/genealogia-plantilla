@@ -104,7 +104,7 @@ def _generation_row(label: str) -> int | None:
 # -- xifres ---------------------------------------------------------------
 
 
-def check_xifres(estat: Estat, report: Report) -> None:
+def check_xifres(estat: Estat, report: Report, root: Path | None = None) -> None:
     """Hand-written counts in README.md against the computed ones.
 
     Only `| Label | value |` rows whose label matches one of `tools.estat`'s
@@ -120,7 +120,8 @@ def check_xifres(estat: Estat, report: Report) -> None:
     }
     every, markdown, lectura = estat.fonts_files()
     routes, route_lines, _ = estat.gedcom_paths()
-    readme = ROOT / "README.md"
+    root = root or ROOT
+    readme = root / "README.md"
     if not readme.exists():
         return
     for n, line in enumerate(_lines(readme), 1):
@@ -153,7 +154,9 @@ def check_xifres(estat: Estat, report: Report) -> None:
     # the disk: "68 fitxers, 30 dels quals .md" against "107 fitxers, 60".
     sentence = re.compile(r"\*?\*?(\d+) fitxers, (\d+) dels quals")
     for relative in ("README.md", "Fonts/00 LLEGIU-ME.md"):
-        path = ROOT / relative
+        path = root / relative
+        if not path.exists():
+            continue
         for n, line in enumerate(_lines(path), 1):
             m = sentence.search(line)
             if m and (int(m.group(1)), int(m.group(2))) != (every, markdown):
@@ -166,7 +169,9 @@ def check_xifres(estat: Estat, report: Report) -> None:
     # The GEDCOM path counts, which were stated in two files with three
     # different numbers.
     for relative in ("README.md", "Fonts/00 LLEGIU-ME.md"):
-        path = ROOT / relative
+        path = root / relative
+        if not path.exists():
+            continue
         for n, line in enumerate(_lines(path), 1):
             if "Fonts/" not in line and "rutes" not in line:
                 continue

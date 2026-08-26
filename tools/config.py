@@ -55,6 +55,17 @@ ROOT = _find_root()
 CONFIG_PATH = ROOT / "config.yaml"
 EXAMPLE_TREE = ROOT / "exemple.ged"
 
+# The same tree, shipped inside the package. The tests pin real numbers against
+# it, so they have to find it wherever the package is installed -- in a family
+# repository there is no `exemple.ged` at the root, and without this copy every
+# value test would simply skip and report nothing wrong.
+PACKAGED_EXAMPLE = Path(__file__).resolve().parent / "tests" / "exemple.ged"
+
+
+def example_tree() -> Path:
+    """The example tree: the repository's own if there is one, else the packaged copy."""
+    return EXAMPLE_TREE if EXAMPLE_TREE.exists() else PACKAGED_EXAMPLE
+
 
 class ConfigError(SystemExit):
     """A configuration problem the user has to fix, phrased as an instruction.
