@@ -5,10 +5,7 @@ own xref, whose parents were already in the `known` exclusion set (they are
 the proposal's own `parents` block) -- so the very first hop always found
 "nothing new" and stopped there, before ever reaching the grandparents. Any
 `--depth` above 1 silently behaved like `--depth 1`: no `ancestors` section,
-no matter how deep the live pedigree actually went. Found investigating
-quatre avantpassats seguits (issue #45): `--depth 3` came back with parents only, four
-times in a row, for people whose FamilySearch pedigree visibly continues
-several generations further.
+no matter how deep the live pedigree actually went.
 
 `LiveTree` Person objects have `xref == fsftid` (both are the FamilySearch
 id, see `tools/fs/fetch.py::_person_from_json`), which the fixtures below

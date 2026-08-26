@@ -71,7 +71,7 @@ def _tracked_fonts_files() -> frozenset[Path]:
     try:
         result = subprocess.run(
             # `-z` and `core.quotePath=false`: without them git prints non-ASCII
-            # names (every accented archive folder here) as quoted octal escapes
+            # names (any accented archive folder here) as quoted octal escapes
             # instead of the UTF-8 bytes, which then never matches a real Path.
             ["git", "-c", "core.quotePath=false", "ls-files", "-z", "--", "Fonts"],
             cwd=ROOT,
@@ -93,10 +93,10 @@ def _tracked_fonts_by_directory() -> dict[Path, list[Path]]:
     `_speaks_for`/`_covered_by_declaration` used to call `directory.iterdir()`,
     which only ever touches the handful of files actually in that one folder.
     Filtering the flat `_tracked_fonts_files()` set by `sibling.parent ==
-    directory` instead re-scans every tracked file -- ~350 of them -- for each
-    of the ~120 declaring documents, and `documents_for` does that once per
-    person on the frontier: turns a sub-second lookup into tens of millions of
-    `Path` comparisons. Grouping once restores the original cost.
+    directory` instead re-scans every tracked file for each declaring document,
+    and `documents_for` does that once per person on the frontier: turns a
+    sub-second lookup into a cost that grows with tree size squared. Grouping
+    once restores the original cost.
     """
     by_dir: dict[Path, list[Path]] = {}
     for path in _tracked_fonts_files():

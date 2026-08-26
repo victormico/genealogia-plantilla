@@ -196,9 +196,8 @@ def match_trees(canon_tree: Tree, fs_tree: Tree) -> list[Match]:
     # tool exists to fill in. Scoring them anyway (and it always finds the same
     # "confident" match, since it is the same person) produced the exact same
     # proposal every run of tools.match --live, forever, with nothing left to
-    # apply -- 158 of the 192 proposals in one run were this. Claiming their
-    # FamilySearch id up front also keeps a weaker candidate from stealing it
-    # and being reported as a spurious near-miss.
+    # apply. Claiming their FamilySearch id up front also keeps a weaker
+    # candidate from stealing it and being reported as a spurious near-miss.
     claimed: dict[str, str] = {}
     results: dict[str, Match] = {}
     for canon in canon_tree.people.values():

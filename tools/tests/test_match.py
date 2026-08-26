@@ -48,14 +48,14 @@ def test_linked_person_is_not_rescored() -> None:
         canon = _write_ged(
             tmp,
             "canon.ged",
-            "0 @I1@ INDI\n1 NAME Joan /Exemple/\n1 SEX M\n1 _FSFTID ABCD-123\n"
-            "0 @I2@ INDI\n1 NAME Maria /Sala/\n1 SEX F\n",
+            "0 @I1@ INDI\n1 NAME Joan /Prova/\n1 SEX M\n1 _FSFTID ABCD-123\n"
+            "0 @I2@ INDI\n1 NAME Maria /Fixtura/\n1 SEX F\n",
         )
         fs = _write_ged(
             tmp,
             "fs.ged",
-            "0 @F1@ INDI\n1 NAME Joan /Exemple/\n1 SEX M\n"
-            "0 @F2@ INDI\n1 NAME Maria /Sala/\n1 SEX F\n",
+            "0 @F1@ INDI\n1 NAME Joan /Prova/\n1 SEX M\n"
+            "0 @F2@ INDI\n1 NAME Maria /Fixtura/\n1 SEX F\n",
         )
         matches = match_trees(canon, fs)
         by_xref = {m.canon.xref: m for m in matches}
