@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "genealogia": {
+      "source": {
+        "source": "github",
+        "repo": "victormico/genealogia-plantilla"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "genealogia@genealogia": true
+  }
+}

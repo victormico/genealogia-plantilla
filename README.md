@@ -56,6 +56,26 @@ paquet: `config.yaml`, `Fonts/`, `reports/` i `cache/` se cerquen des d'on
 executes l'ordre cap amunt, com fa el git. Amb `GENEALOGIA_ARREL` es pot dir a mà,
 que és el que necessita una tasca programada que no arrenca dins del repositori.
 
+## El skill per al Claude Code
+
+El mètode —planificar abans de cercar, com es pesa una prova, com se cita, on va
+cada cosa— és un **skill** que hi ha en aquest mateix repositori, a
+`plugins/genealogia/`. No es copia: s'instal·la des d'aquí.
+
+```
+/plugin marketplace add victormico/genealogia-plantilla
+```
+
+O directament, sense escriure res: el `.claude/settings.json` d'aquest repositori
+i el de l'arbre de família ja el declaren, o sigui que en obrir-hi una sessió ja
+hi és.
+
+Deriva de [claude-family-history-research-skill](https://github.com/emaynard/claude-family-history-research-skill)
+d'Erik Maynard (MIT), i hi afegeix el que no hi podia ser: les eines d'aquest
+repositori, l'estructura de `Fonts/`, i com es descriuen els arxius al
+`config.yaml`. La llista sencera del que ve d'on és a
+`plugins/genealogia/skills/recerca-genealogica/ATRIBUCIO.md`.
+
 ## Comença aquí
 
 ### 1. L'entorn
