@@ -233,7 +233,7 @@ def test_break_it_on_purpose(estat: Estat) -> None:
 def test_render_is_deterministic(estat: Estat) -> None:
     print("\nl'informe és determinista")
     first = render(estat)
-    second = render(Estat(CANONICAL))
+    second = render(Estat(CANONICAL, root=estat.root))
     check(first == second, "dues execucions donen el mateix text")
     check(first.startswith("# "), "comença amb un títol markdown")
     check("No s'edita a mà" in first, "diu que no s'edita a mà")
