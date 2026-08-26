@@ -1,0 +1,52 @@
+# El paquet, perquè el codi visqui en un sol lloc.
+#
+# Aquest repositori fa dues feines alhora: és la **plantilla** amb què comences
+# un arbre —`config.yaml`, `Fonts/`, els workflows, l'arbre d'exemple— i és
+# alhora el **paquet** amb les eines, que un repositori de família ja començat
+# es pot instal·lar en lloc de copiar-se-les.
+#
+# Copiar-se-les és el que fèiem, i el 26-08-2026 les dues còpies ja diferien en
+# 39 dels 44 fitxers: 777 línies només a `apv/verify.py`. Cap de les dues era
+# la bona —la del repositori de família tenia la lògica nova, la d'ací tenia el
+# `config.yaml`— i cada millora s'havia d'escriure dues vegades.
+#
+#     pip install "genealogia-tools @ git+https://github.com/victormico/genealogia-plantilla@v1.0.0"
+#
+# El nom d'importació continua sent `tools`, no `genealogia_tools`: així
+# `python -m tools.frontier` segueix funcionant igual als dos repositoris, a la
+# CI i a cada README, i no cal reescriure cap ordre enlloc. És un nom molt
+# genèric per a un paquet, i per això aquest no es publica al PyPI: s'instal·la
+# des del git, dins del venv d'un projecte que ja el dona per seu.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genealogia-tools"
+version = "1.0.0"
+description = "Eines per ampliar un arbre genealògic amb FamilySearch i amb els arxius que no tenen API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Víctor Micó" }]
+keywords = ["genealogia", "gedcom", "familysearch", "ancestris"]
+dependencies = [
+    "requests>=2.32",
+    "diskcache>=5.6",
+    "PyYAML>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/victormico/genealogia-plantilla"
+
+[tool.setuptools.packages.find]
+# Només les eines. `Fonts/`, `reports/` i l'arbre d'exemple són la plantilla,
+# no el paquet: qui se l'instal·la ja té els seus.
+include = ["tools*"]
+
+[tool.setuptools.package-data]
+# L'arbre d'exemple viatja dins del paquet. Les proves de valors hi fixen
+# números de veritat, i en un repositori de família no hi ha cap `exemple.ged`
+# a l'arrel: sense aquesta còpia es saltarien totes i no dirien res.
+"tools.tests" = ["exemple.ged"]

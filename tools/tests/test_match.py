@@ -19,7 +19,7 @@ from pathlib import Path
 from tools.match import Candidate, Match, Score, match_trees, previously_decided, write_proposals
 from tools.people import Person, Tree
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.config import ROOT
 
 _failures: list[str] = []
 

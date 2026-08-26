@@ -42,7 +42,7 @@ from .fs.session import add_common_args, build_session
 from .normalize import place_key
 from .people import Person, Tree
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 REPORTS = ROOT / "reports"
 FS_PERSON = "https://www.familysearch.org/tree/person/details/"

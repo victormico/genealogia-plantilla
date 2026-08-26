@@ -39,7 +39,7 @@ from .fs.fetch import LiveTree
 from .normalize import fold
 from .people import Person, Tree
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 # The facts this report prints about FamilySearch, not the pedigree itself:
 # `cache/pedigree.json` needs credentials to refetch and is not something to

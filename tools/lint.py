@@ -21,11 +21,13 @@ table rows can.
     python -m tools.lint --privacitat   # binaries tracked only while private
     python -m tools.lint --duplicacio   # writes reports/duplicacio.md
     python -m tools.lint --informes     # reports/frontier.md and worklist.md are current
+    python -m tools.lint --generic      # no hi ha cap dada de família dins de tools/
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import subprocess
@@ -83,10 +85,26 @@ def _int(text: str) -> int | None:
     return int(m.group()) if m else None
 
 
+# Catalan ordinals as they are written in a README's generation table.
+_ORDINALS = (
+    "primera", "segona", "tercera", "quarta", "cinquena", "sisena", "setena",
+    "vuitena", "novena", "desena", "onzena", "dotzena", "tretzena", "catorzena",
+    "quinzena", "setzena", "dissetena", "divuitena", "dinovena", "vintena",
+)
+
+
+def _generation_row(label: str) -> int | None:
+    """`Sisena generació` -> 6, anything else -> None."""
+    words = label.strip().lower().split()
+    if len(words) != 2 or words[1] != "generació":
+        return None
+    return _ORDINALS.index(words[0]) + 1 if words[0] in _ORDINALS else None
+
+
 # -- xifres ---------------------------------------------------------------
 
 
-def check_xifres(estat: Estat, report: Report) -> None:
+def check_xifres(estat: Estat, report: Report, root: Path | None = None) -> None:
     """Hand-written counts in README.md against the computed ones.
 
     Only `| Label | value |` rows whose label matches one of `tools.estat`'s
@@ -100,7 +118,10 @@ def check_xifres(estat: Estat, report: Report) -> None:
         "Amb identificador de FamilySearch": estat.with_fsftid,
         "Sense pares (front de recerca)": estat.without_parents,
     }
-    readme = ROOT / "README.md"
+    every, markdown, lectura = estat.fonts_files()
+    routes, route_lines, _ = estat.gedcom_paths()
+    root = root or ROOT
+    readme = root / "README.md"
     if not readme.exists():
         return
     for n, line in enumerate(_lines(readme), 1):
@@ -114,6 +135,58 @@ def check_xifres(estat: Estat, report: Report) -> None:
             said = _int(value)
             if said is not None and said != rows[label]:
                 report.fail(f"README.md:{n}", f"{label}: diu {said}, són {rows[label]}")
+
+        # `| Sisena generació | **30 de 32** |`: how full a generation is. The
+        # total is not a number anybody should be typing -- generation N has
+        # 2**(N-1) slots -- so it is computed and compared too.
+        want = _generation_row(label)
+        if want is not None:
+            filled, _ = estat.generation(want)
+            m = re.search(r"(\d+)\s+de\s+(\d+)", value)
+            total = 2 ** (want - 1)
+            if m and (int(m.group(1)), int(m.group(2))) != (filled, total):
+                report.fail(
+                    f"README.md:{n}",
+                    f"{label}: diu «{m.group()}», són «{filled} de {total}»",
+                )
+
+    # The inventory sentence, which used to disagree with itself as well as with
+    # the disk: "68 fitxers, 30 dels quals .md" against "107 fitxers, 60".
+    sentence = re.compile(r"\*?\*?(\d+) fitxers, (\d+) dels quals")
+    for relative in ("README.md", "Fonts/00 LLEGIU-ME.md"):
+        path = root / relative
+        if not path.exists():
+            continue
+        for n, line in enumerate(_lines(path), 1):
+            m = sentence.search(line)
+            if m and (int(m.group(1)), int(m.group(2))) != (every, markdown):
+                report.fail(
+                    f"{relative}:{n}",
+                    f"diu «{m.group(1)} fitxers, {m.group(2)} dels quals .md», "
+                    f"són {every} / {markdown}",
+                )
+
+    # The GEDCOM path counts, which were stated in two files with three
+    # different numbers.
+    for relative in ("README.md", "Fonts/00 LLEGIU-ME.md"):
+        path = root / relative
+        if not path.exists():
+            continue
+        for n, line in enumerate(_lines(path), 1):
+            if "Fonts/" not in line and "rutes" not in line:
+                continue
+            m = re.search(r"\*\*(\d+) línies\*\*", line)
+            if m and int(m.group(1)) != route_lines:
+                report.fail(
+                    f"{relative}:{n}",
+                    f"rutes al GEDCOM: diu {m.group(1)} línies, són {route_lines}",
+                )
+            m = re.search(r"(\d+) bones", line)
+            if m and int(m.group(1)) != routes:
+                report.fail(
+                    f"{relative}:{n}",
+                    f"la comprovació de rutes: diu «{m.group(1)} bones», són {routes}",
+                )
 
 
 # -- rutes ----------------------------------------------------------------
@@ -503,6 +576,79 @@ def check_informes(estat: Estat, report: Report, reports_dir: Path = REPORTS) ->
             )
 
 
+# -- generic ---------------------------------------------------------------
+
+
+# Where the family data is allowed to be: `config.yaml`, and nowhere else.
+# Everything under `tools/` is the package, and the package is shared with
+# every other family that starts from this template.
+#
+# This check exists because the sharing failed once already. The tools were
+# copied into a family repository instead of installed, and by 26-08-2026 the
+# two copies differed in 39 of 44 files -- because the copy that had the real
+# tree grew real names inside the code, and could no longer be given back.
+#
+# It looks for the shapes that data takes when it leaks: a GEDCOM xref in
+# quotes, a FamilySearch PID, an ancestor's name. It cannot catch prose in a
+# comment, and it is not meant to: what it catches is a value the code will
+# *act* on.
+_XREF_LITERAL = re.compile(r"[IFS]\d{4,5}")
+_FS_PID = re.compile(r"[A-Z0-9]{4}-[A-Z0-9]{3}")
+
+# Files that legitimately carry the shapes above.
+_GENERIC_EXEMPT = {
+    "config.py",       # it is the one that reads config.yaml
+    "tests",           # fixtures name the example tree on purpose
+}
+
+
+def check_generic(report: Report) -> None:
+    """No xref, PID or place decides anything inside `tools/`.
+
+    The rule, from `tools/config.py`'s own docstring: if you are about to write
+    a name, an xref or a town into the code, it belongs in `config.yaml`.
+
+    Only *values the code acts on* are inspected, and that is why this reads
+    the syntax tree instead of the text. A docstring saying «e.g. "I00176"» is
+    documentation and stays; the same string in a `set` is a decision, and the
+    next family to use this package inherits it silently.
+    """
+    tools = Path(__file__).resolve().parent
+    checked = 0
+    for path in sorted(tools.rglob("*.py")):
+        relative = path.relative_to(tools)
+        if relative.parts[0] in _GENERIC_EXEMPT or relative.name in _GENERIC_EXEMPT:
+            continue
+        checked += 1
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, OSError) as exc:
+            report.fail(f"tools/{relative}", f"no s'ha pogut llegir: {exc}")
+            continue
+        docstrings = {
+            id(node.body[0].value)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.ClassDef,
+                                 ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.body and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            if id(node) in docstrings:
+                continue
+            for pattern, what in ((_XREF_LITERAL, "un xref"),
+                                  (_FS_PID, "un PID de FamilySearch")):
+                if pattern.fullmatch(node.value):
+                    report.fail(
+                        f"tools/{relative}:{node.lineno}",
+                        f"{what} escrit al codi ({node.value!r}): va a config.yaml",
+                    )
+    report.note(f"{checked} fitxers de tools/ mirats")
+
+
 # -- cli ------------------------------------------------------------------
 
 
@@ -516,16 +662,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--privacitat", action="store_true")
     parser.add_argument("--duplicacio", action="store_true")
     parser.add_argument("--informes", action="store_true")
+    parser.add_argument("--generic", action="store_true")
     args = parser.parse_args(argv)
 
     chosen = any(
         (args.xifres, args.rutes, args.xrefs, args.cr_id, args.frontmatter,
-         args.privacitat, args.duplicacio, args.informes)
+         args.privacitat, args.duplicacio, args.informes, args.generic)
     )
     everything = not chosen
     status = 0
     estat = Estat()
 
+    if everything or args.generic:
+        print("generic")
+        report = Report()
+        check_generic(report)
+        status |= report.show("dades de família dins de tools/")
     if everything or args.xifres:
         print("xifres")
         report = Report()

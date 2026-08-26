@@ -15,14 +15,56 @@ it belongs in `config.yaml`.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+def _find_root() -> Path:
+    """The repository being worked on -- which is not where this code lives.
+
+    These tools are installed as a package (`genealogia-tools`), so
+    `Path(__file__).parents[1]` is `site-packages`, and every path derived from
+    it -- `config.yaml`, `Fonts/`, `reports/`, `cache/` -- would point inside
+    the virtualenv instead of at the family's repository. It looked right for
+    as long as the tools were copied into each repository, which is exactly the
+    duplication the package exists to end.
+
+    So the root is found the way git finds one: from the working directory
+    upward, looking for the file that marks a repository as configured. Set
+    `GENEALOGIA_ARREL` to override it -- useful from an editor, or from a
+    scheduled job whose working directory is not the repository.
+    """
+    override = os.environ.get("GENEALOGIA_ARREL")
+    if override:
+        return Path(override).expanduser().resolve()
+    here = Path.cwd().resolve()
+    for candidate in (here, *here.parents):
+        if (candidate / "config.yaml").exists():
+            return candidate
+    # Running from a checkout that has not been configured yet: the repository
+    # around this file is still the best answer available.
+    packaged = Path(__file__).resolve().parents[1]
+    if (packaged / "config.yaml").exists():
+        return packaged
+    return here
+
+
+ROOT = _find_root()
 CONFIG_PATH = ROOT / "config.yaml"
 EXAMPLE_TREE = ROOT / "exemple.ged"
+
+# The same tree, shipped inside the package. The tests pin real numbers against
+# it, so they have to find it wherever the package is installed -- in a family
+# repository there is no `exemple.ged` at the root, and without this copy every
+# value test would simply skip and report nothing wrong.
+PACKAGED_EXAMPLE = Path(__file__).resolve().parent / "tests" / "exemple.ged"
+
+
+def example_tree() -> Path:
+    """The example tree: the repository's own if there is one, else the packaged copy."""
+    return EXAMPLE_TREE if EXAMPLE_TREE.exists() else PACKAGED_EXAMPLE
 
 
 class ConfigError(SystemExit):
@@ -321,3 +363,85 @@ def archive_hint(town: str, place: str) -> tuple[int, str]:
     guide = (get("guies", default={}) or {}).get(region) or {}
     note = str(guide.get("nota") or guide.get("title") or "")
     return int(guide.get("puntuacio", 0)), note
+
+
+def apv_archive_sources() -> set[str]:
+    """SOUR xrefs that count as archive evidence for `tools.apv.verify`.
+
+    Someone already carrying one of these has been documented by an archive and
+    is not worth a query. FamilySearch and any family summary are deliberately
+    NOT in here by default: they are exactly what the index is being checked
+    against, and counting them would retire the ancestors most in need of proof.
+    """
+    raw = get("apv", "fonts_arxiu", default=[]) or []
+    return {str(x).strip().strip("@") for x in raw if str(x).strip()}
+
+
+def apv_archive_folders() -> tuple[str, ...]:
+    """Folders of `Fonts/` whose `.md` files are archive transcriptions.
+
+    A person named in one of them has been looked up already, whether or not
+    the GEDCOM says so -- a citation gets hung on the person searched for and
+    not on everyone the document names, and the difference costs a query.
+    """
+    raw = get("apv", "carpetes_arxiu", default=[]) or []
+    return tuple(str(x) for x in raw if str(x).strip())
+
+
+def apv_lost_marriage_books() -> tuple[tuple[str, int, int], ...]:
+    """(parish, from, to) spans whose marriage books are LOST.
+
+    Where the book is gone, what the index holds is the gutting of an index
+    book: one surname per person and the father of the interested party alone,
+    with no image to request afterwards. That changes the ORDER a plan should
+    propose things in -- a marriage there yields one name where a baptism from
+    a surviving book yields seven -- so it is worth stating per parish.
+    """
+    out = []
+    for entry in get("apv", "llibres_perduts", default=[]) or []:
+        if not isinstance(entry, dict):
+            continue
+        parish = str(entry.get("parroquia", "")).lower().strip()
+        start, end = entry.get("de"), entry.get("a")
+        if parish and start is not None and end is not None:
+            out.append((parish, int(start), int(end)))
+    return tuple(out)
+
+
+def apv_branches() -> tuple[tuple[int, str], ...]:
+    """(Sosa number, region) roots that say which branch an ancestor is on.
+
+    Sosa numbering already encodes the branch: halving a Sosa number walks down
+    a generation, so halving repeatedly lands on the ancestor whose side the
+    person is on. Deciding the archive that way beats reading birth places one
+    by one, which fails for everyone whose PLAC is empty.
+
+    Order matters and is kept: the narrowest branch has to be checked first,
+    because it sits inside a wider one.
+    """
+    out = []
+    for entry in get("apv", "branques", default=[]) or []:
+        if isinstance(entry, dict) and entry.get("sosa"):
+            out.append((int(entry["sosa"]), str(entry.get("regio", ""))))
+    return tuple(out)
+
+
+def apv_index_regions() -> set[str]:
+    """Regions this index actually holds. Others have their own archives.
+
+    Empty means "no branch rule configured", and `tools.apv.verify` then
+    considers every ancestor rather than silently planning nothing.
+    """
+    raw = get("apv", "regions_amb_index", default=[]) or []
+    return {str(x) for x in raw if str(x).strip()}
+
+
+def generation_years() -> int:
+    """Years between a birth and the next one down, for estimating dates.
+
+    Used when an ancestor has no date of their own and the only anchor is a
+    dated descendant. The estimate leans late -- a tree of ancestors records
+    the child we descend from, rarely the firstborn -- so callers widen their
+    search window per hop rather than trusting this number.
+    """
+    return int(get("apv", "anys_per_generacio", default=30))

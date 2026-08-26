@@ -28,7 +28,7 @@ from .fs.fetch import LiveTree
 from .normalize import fold
 from .people import Tree
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 REPORTS = ROOT / "reports"
 

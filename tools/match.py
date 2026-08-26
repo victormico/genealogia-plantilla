@@ -28,7 +28,7 @@ from .config import fs_dump_path, tree_path
 from .people import Person, Tree
 from .normalize import fold, given_match, place_match, year_match
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 REPORTS = ROOT / "reports"
 

@@ -31,7 +31,7 @@ from .gedcom.splice import Splicer
 from .people import load_people
 from .render import PlaceBook, render_family, render_individual, render_source
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 
 

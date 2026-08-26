@@ -41,7 +41,7 @@ import yaml
 
 from .config import tree_path
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 REPORTS = ROOT / "reports"
 ARCHIVE = REPORTS / "aplicades"
 DISCARDED = REPORTS / "descartades"

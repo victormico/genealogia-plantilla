@@ -31,8 +31,8 @@ from tools.frontier import declared_documents, documents_for, guess_disagreement
 from tools.lint import Report, check_xrefs
 from tools.people import Tree
 
-ROOT = Path(__file__).resolve().parents[2]
-CANONICAL = ROOT / "exemple.ged"
+from tools.config import ROOT, example_tree
+CANONICAL = example_tree()
 
 _failures: list[str] = []
 
@@ -164,8 +164,16 @@ def test_arxiu_open_until_configured() -> None:
         with _Sandbox(Path(tmp)) as fonts:
             note = NOTE_TEMPLATE.replace("arxiu: adg", "arxiu: qualsevol_cosa")
             (fonts / "Nota.md").write_text(note, encoding="utf-8")
-            report = Report()
-            fm.check(report, None)
+            # The vocabulary comes from config.yaml, and this test is about
+            # what happens when there is none. Installed into a repository that
+            # HAS one, the ambient config would decide the answer instead.
+            original = fm.config.frontmatter_archives
+            fm.config.frontmatter_archives = lambda: {}
+            try:
+                report = Report()
+                fm.check(report, None)
+            finally:
+                fm.config.frontmatter_archives = original
             check(
                 not any("arxiu" in p for p in report.problems),
                 "sense config, cap arxiu es rebutja",

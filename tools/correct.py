@@ -43,7 +43,7 @@ from .config import tree_path
 from .gedcom.lines import SOSA_TAG, GedcomFile, dedupe_sosa
 from .apply import accepted, validate
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 
 
 class Refused(Exception):

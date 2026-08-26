@@ -212,6 +212,64 @@ apv:
   # cap event MARR. Varia per lloc i època.
   edat_de_casar: 24
 
+  # Anys entre un naixement i el següent cap avall, per estimar la data de qui
+  # no en té cap. L'estimació tira a tard —un arbre d'avantpassats guarda el
+  # fill de qui descendim, que rarament és el gran—, o siga que `tools.apv.verify`
+  # eixampla la forquilla a cada salt en lloc de fiar-se'n.
+  anys_per_generacio: 30
+
+  # Els xrefs de FONT que compten com a prova d'arxiu. Qui en porta una ja està
+  # documentat i no val una consulta.
+  #
+  # Compte amb què hi poses: FamilySearch i qualsevol resum de família NO hi han
+  # d'anar, perquè són justament el que l'índex ha de comprovar. Posar-los-hi
+  # retira de la llista els avantpassats que més falta els fa una partida.
+  fonts_arxiu: []
+  # fonts_arxiu: [S00005, S00006, S00008]
+
+  # Les carpetes de `Fonts/` amb transcripcions d'arxiu. Qui hi surt anomenat ja
+  # s'ha cercat, tant si el GEDCOM ho diu com si no: la citació se sol penjar de
+  # la persona buscada i no de tots els que el document anomena, i la diferència
+  # costa una consulta.
+  carpetes_arxiu: []
+  # carpetes_arxiu:
+  #   - Arxiu Parroquial València
+  #   - Arxiu Diocesà de València
+
+  # Parròquies i anys amb el llibre de MATRIMONIS perdut. Quan el llibre no hi
+  # és, el que guarda l'índex és el buidatge d'un «Libro Índice»: un sol cognom
+  # per persona, el pare de l'interessat i res més —ni mare, ni avis, ni els
+  # pares del cònjuge— i cap imatge per demanar després.
+  #
+  # Això canvia l'ORDRE, no només el text: la regla evident és «primer el
+  # matrimoni, sempre», perquè dona els pares i els quatre avis dels dos
+  # cònjuges. On el llibre és perdut és al revés, i el bateig va primer.
+  llibres_perduts: []
+  # llibres_perduts:
+  #   - parroquia: ontinyent
+  #     de: 1560
+  #     a: 1847
+
+  # De quina banda de la família és cada avantpassat, dit amb números de Sosa.
+  # Partir un Sosa per la meitat baixa una generació, o siga que partir-lo fins
+  # al final t'ensenya de qui descendeix. Decidir-ho així és molt millor que
+  # llegir els llocs de naixement un per un, que falla per a tothom qui té el
+  # `PLAC` buit.
+  #
+  # **L'ordre importa**: la branca més estreta va primer, perquè és a dins d'una
+  # de més ampla. La 11 és dins de la 2, i per això es mira abans.
+  branques: []
+  # branques:
+  #   - { sosa: 11, regio: albacete }
+  #   - { sosa: 3,  regio: girona }
+  #   - { sosa: 2,  regio: valencia }
+
+  # Quines d'aquestes regions hi ha, de fet, en aquest índex. Les altres tenen
+  # els seus arxius i les seves eines. En blanc vol dir «no hi ha regla», i
+  # llavors s'hi miren tots: no planificar res mai no és la resposta bona.
+  regions_amb_index: []
+  # regions_amb_index: [valencia]
+
 # ---------------------------------------------------------------------------
 # L'estat de l'arbre (tools/estat.py) i les comprovacions (tools/lint.py)
 # ---------------------------------------------------------------------------

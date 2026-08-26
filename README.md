@@ -31,6 +31,58 @@ treball dia a dia; els issues són per fer-ne el seguiment i per a tot el que no
 és una proposta concreta al GEDCOM —un viatge a un arxiu, una decisió sobre una
 hipòtesi, una tasca de manteniment del repositori.
 
+## Dues feines alhora: plantilla i paquet
+
+Aquest repositori serveix per a dues coses, i val la pena saber quina fas servir.
+
+**Com a plantilla**, te'l copies sencer i comences un arbre: `config.yaml`,
+l'estructura de `Fonts/`, els workflows i un arbre d'exemple per provar-ho tot.
+És el que expliquen les seccions de sota.
+
+**Com a paquet**, un repositori de família que ja existeix se n'instal·la només
+les eines, en lloc de copiar-se-les:
+
+```bash
+pip install "genealogia-tools @ git+https://github.com/victormico/genealogia-plantilla@v1.0.0"
+```
+
+Les ordres no canvien gens: `python -m tools.frontier` funciona igual, perquè el
+nom d'importació continua sent `tools`. El que canvia és **d'on surt el codi**.
+
+> **Per què.** Les eines es van copiar del repositori principal el 17-08-2026, i
+> el 26-08-2026 les dues còpies ja diferien en **39 dels 44 fitxers** —777 línies
+> només a `tools/apv/verify.py`. Cap de les dues era la bona: la còpia de família
+> tenia la lògica nova i la d'ací tenia el `config.yaml`, o siga que cada millora
+> s'havia d'escriure dues vegades i de dues maneres. Ara n'hi ha una de sola.
+>
+> El que ho manté així és `python -m tools.lint --generic`, que falla si dins de
+> `tools/` apareix un xref o un PID de FamilySearch escrit al codi. La regla és la
+> del docstring de `tools/config.py`: **si has d'escriure un nom, un xref o un
+> poble, va al `config.yaml`.**
+
+Quan les eines s'instal·len, el directori que compta és **el teu**, no el del
+paquet: `config.yaml`, `Fonts/`, `reports/` i `cache/` se cerquen des d'on
+executes l'ordre cap amunt, com fa el git. Amb `GENEALOGIA_ARREL` es pot dir a mà,
+que és el que necessita una tasca programada que no arrenca dins del repositori.
+
+## El skill per al Claude Code
+
+El mètode —planificar abans de cercar, com es pesa una prova, com se cita, on va
+cada cosa— és un **skill**, i viu al seu repositori:
+[victormico/claude-family-history-research-skill](https://github.com/victormico/claude-family-history-research-skill).
+És un fork del [d'Erik Maynard](https://github.com/emaynard/claude-family-history-research-skill)
+(MIT), mantingut com a fork perquè el que faci amunt es puga fusionar.
+
+```
+/plugin marketplace add victormico/claude-family-history-research-skill
+```
+
+O sense escriure res: el `.claude/settings.json` d'aquest repositori ja el
+declara, o sigui que en obrir-hi una sessió ja hi és.
+
+Hi afegeix el que no hi podia ser: les eines d'aquest repositori, l'estructura de
+`Fonts/` i com es descriuen els arxius al `config.yaml`.
+
 ## Comença aquí
 
 ### 1. L'entorn
