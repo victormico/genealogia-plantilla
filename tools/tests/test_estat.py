@@ -244,11 +244,24 @@ def test_render_is_deterministic(estat: Estat) -> None:
         check(out.read_text(encoding="utf-8") == first, "es pot escriure i rellegir")
 
 
+
+def _example_root(path) -> str | None:
+    """Whoever carries `_SOSADABOVILLE 1` in the example tree."""
+    for person in Tree(path).people.values():
+        if person.sosa and person.sosa.split()[0] == "1":
+            return person.xref
+    return None
+
+
 def main() -> int:
     if not CANONICAL.exists():
         print(f"missing {CANONICAL}")
         return 2
-    estat = Estat(CANONICAL)
+    # Explicitly the example tree AND its own root: `estat: arrel:` in the
+    # config of whatever repository this is installed into would otherwise
+    # point at a person the example tree has never heard of, and every pinned
+    # number below would be measuring the wrong tree.
+    estat = Estat(CANONICAL, root=_example_root(CANONICAL))
     test_generation_table(estat)
     test_foster_shrinks_a_generation()
     test_counts(estat)
