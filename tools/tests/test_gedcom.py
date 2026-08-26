@@ -26,7 +26,7 @@ from tools import config
 from tools.gedcom.lines import SOSA_TAG, GedcomFile, dedupe_sosa
 from tools.gedcom.splice import Splicer
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.config import ROOT
 EXAMPLE = ROOT / "exemple.ged"
 
 _failures: list[str] = []

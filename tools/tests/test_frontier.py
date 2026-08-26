@@ -33,7 +33,7 @@ from tools.frontier import (
 from tools.people import Person, Tree
 from tools.worklist import write_report as worklist_write_report
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.config import ROOT
 CANONICAL = ROOT / "exemple.ged"
 
 # I00016 (Rita VIVES ALCARAZ) is exemple.ged's one leaf that carries an

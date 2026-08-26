@@ -32,7 +32,7 @@ import yaml
 from . import config
 from .config import tree_path
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 FONTS = ROOT / "Fonts"
 PERSONES = ROOT / "Persones"
 

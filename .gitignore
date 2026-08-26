@@ -23,3 +23,8 @@ cache/
 
 # Fitxers de blocatge de LibreOffice
 .~lock.*
+
+# El paquet, en construir-lo
+build/
+dist/
+*.egg-info/

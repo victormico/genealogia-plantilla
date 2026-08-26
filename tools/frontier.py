@@ -25,10 +25,12 @@ import argparse
 import datetime
 import json
 import re
+import subprocess
 import sys
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from functools import lru_cache
 from pathlib import Path
 
 from . import config, frontmatter, report
@@ -37,7 +39,7 @@ from .fs.fetch import LiveTree
 from .normalize import fold
 from .people import Person, Tree
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 # The facts this report prints about FamilySearch, not the pedigree itself:
 # `cache/pedigree.json` needs credentials to refetch and is not something to
@@ -52,6 +54,56 @@ REPORTS = ROOT / "reports"
 # odd town that is an exception. See config.archive_hint.
 
 
+@lru_cache(maxsize=1)
+def _tracked_fonts_files() -> frozenset[Path]:
+    """Every file under Fonts/ that git actually tracks.
+
+    Full-resolution scans are deliberately untracked (see `.gitignore`): they
+    exist only on whichever machine photographed them. Scanning the filesystem
+    instead of git's index makes document corroboration depend on which scans
+    happen to be sitting on disk, so the same commit renders a different
+    `frontier.md` on a contributor's laptop than in CI's clean checkout --
+    `reports/frontier.md`/`worklist.md`, committed here, then fails
+    `tools.lint --informes` there no matter how freshly it was regenerated.
+    Asking git for the tracked list instead of the filesystem gives the same
+    answer wherever the repository is checked out.
+    """
+    try:
+        result = subprocess.run(
+            # `-z` and `core.quotePath=false`: without them git prints non-ASCII
+            # names (every accented archive folder here) as quoted octal escapes
+            # instead of the UTF-8 bytes, which then never matches a real Path.
+            ["git", "-c", "core.quotePath=false", "ls-files", "-z", "--", "Fonts"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        # No git available (e.g. a bare export): fall back to the filesystem
+        # rather than reporting no documents at all.
+        return frozenset(p for p in FONTS.rglob("*") if p.is_file())
+    return frozenset(ROOT / line for line in result.stdout.split("\0") if line)
+
+
+@lru_cache(maxsize=1)
+def _tracked_fonts_by_directory() -> dict[Path, list[Path]]:
+    """`_tracked_fonts_files()`, grouped by parent directory.
+
+    `_speaks_for`/`_covered_by_declaration` used to call `directory.iterdir()`,
+    which only ever touches the handful of files actually in that one folder.
+    Filtering the flat `_tracked_fonts_files()` set by `sibling.parent ==
+    directory` instead re-scans every tracked file -- ~350 of them -- for each
+    of the ~120 declaring documents, and `documents_for` does that once per
+    person on the frontier: turns a sub-second lookup into tens of millions of
+    `Path` comparisons. Grouping once restores the original cost.
+    """
+    by_dir: dict[Path, list[Path]] = {}
+    for path in _tracked_fonts_files():
+        by_dir.setdefault(path.parent, []).append(path)
+    return by_dir
+
+
 def slug(text: str) -> str:
     """Filename-ish key: unaccented lowercase words only."""
     decomposed = unicodedata.normalize("NFD", text)
@@ -64,8 +116,8 @@ def index_documents() -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     if not FONTS.exists():
         return out
-    for path in sorted(FONTS.rglob("*")):
-        if path.is_dir() or path.name.startswith("."):
+    for path in sorted(_tracked_fonts_files()):
+        if path.name.startswith("."):
             continue
         # Reading copies and the manifest are derived, not documents: indexing
         # them would count the same scan several times over.
@@ -110,7 +162,7 @@ def declared_documents() -> dict[str, list[str]]:
     people it is about does not need guessing.
     """
     out: dict[str, list[str]] = {}
-    for path in sorted(FONTS.rglob("*.md")):
+    for path in sorted(p for p in _tracked_fonts_files() if p.suffix == ".md"):
         if ".obsidian" in path.parts:
             continue
         try:
@@ -141,10 +193,8 @@ def _speaks_for(declared: dict[str, list[str]]) -> dict[str, str]:
     }
     for folder, stem, note in stems:
         directory = ROOT / folder
-        if not directory.is_dir():
-            continue
-        for sibling in directory.iterdir():
-            if sibling.is_file() and sibling.stem.startswith(stem):
+        for sibling in _tracked_fonts_by_directory().get(directory, ()):
+            if sibling.stem.startswith(stem):
                 out[str(sibling.relative_to(ROOT))] = note
     return out
 
@@ -165,10 +215,8 @@ def _covered_by_declaration(declared: dict[str, list[str]]) -> set[str]:
     }
     for folder, stem in stems:
         directory = ROOT / folder
-        if not directory.is_dir():
-            continue
-        for sibling in directory.iterdir():
-            if sibling.is_file() and sibling.stem.startswith(stem):
+        for sibling in _tracked_fonts_by_directory().get(directory, ()):
+            if sibling.stem.startswith(stem):
                 covered.add(str(sibling.relative_to(ROOT)))
     return covered
 

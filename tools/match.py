@@ -21,12 +21,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from . import report
 from .config import fs_dump_path, tree_path
 from .people import Person, Tree
 from .normalize import fold, given_match, place_match, year_match
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 PEDIGREE = ROOT / "cache" / "pedigree.json"
 REPORTS = ROOT / "reports"
 
@@ -190,10 +192,26 @@ def match_trees(canon_tree: Tree, fs_tree: Tree) -> list[Match]:
         for part in parts:
             by_any.setdefault(part, []).append(p)
 
+    # Anyone with a `_FSFTID` already needs no matching: that is the join this
+    # tool exists to fill in. Scoring them anyway (and it always finds the same
+    # "confident" match, since it is the same person) produced the exact same
+    # proposal every run of tools.match --live, forever, with nothing left to
+    # apply -- 158 of the 192 proposals in one run were this. Claiming their
+    # FamilySearch id up front also keeps a weaker candidate from stealing it
+    # and being reported as a spurious near-miss.
+    claimed: dict[str, str] = {}
+    results: dict[str, Match] = {}
+    for canon in canon_tree.people.values():
+        if canon.fsftid:
+            claimed[canon.fsftid] = canon.xref
+            results[canon.xref] = Match(canon, None, None, "linked")
+
     # Score every plausible pair, keeping the full ranked candidate list per
     # person: the assignment step below needs to walk past claimed candidates.
     ranked: list[tuple[Person, list[Candidate]]] = []
     for canon in canon_tree.people.values():
+        if canon.fsftid:
+            continue
         pool: dict[str, Person] = {}
         for part in canon.surname_parts:
             for cand in by_any.get(part, ()):
@@ -209,8 +227,6 @@ def match_trees(canon_tree: Tree, fs_tree: Tree) -> list[Match]:
     # first, so a good match is never stolen by a weaker one. A person whose top
     # candidate is already claimed walks down its own list to the best free one.
     ranked.sort(key=lambda row: -(row[1][0].score.total if row[1] else 0.0))
-    claimed: dict[str, str] = {}
-    results: dict[str, Match] = {}
     for canon, candidates in ranked:
         top = candidates[0] if candidates else None
         free = [c for c in candidates if c.fs.xref not in claimed]
@@ -255,7 +271,12 @@ def write_report(matches: list[Match], canon_tree: Tree, fs_tree, path: Path) ->
     confident = [m for m in matches if m.bucket == "confident"]
     review = [m for m in matches if m.bucket == "review"]
     unmatched = [m for m in matches if m.bucket == "unmatched"]
-    claimed = {m.best.fs.xref for m in matches if m.best and m.bucket != "unmatched"}
+    # "linked" (already has `_FSFTID`) has no `best`, so it needs its own claim
+    # on top of the scored matches -- otherwise its FamilySearch person shows up
+    # below as "only on FamilySearch", which is not true, it is just not scored.
+    claimed = {m.canon.fsftid for m in matches if m.canon.fsftid} | {
+        m.best.fs.xref for m in matches if m.best and m.bucket != "unmatched"
+    }
     fs_only = [p for p in fs_tree.people.values() if p.xref not in claimed]
 
     lines = [
@@ -406,8 +427,42 @@ def hygiene_section(canon_tree: Tree) -> list[str]:
     return out
 
 
-def write_proposals(matches: list[Match], path: Path) -> int:
+def previously_decided(reports_dir: Path) -> set[tuple[str, str]]:
+    """(target, fsftid) pairs a human has already accepted or rejected.
+
+    tools.match regenerates reports/fsftid-backfill.yaml from scratch every
+    run -- it has no memory of its own. A candidate rejected last week reads
+    exactly as fresh next week and gets asked about again, forever, unless
+    something checks what was already decided. `tools.research`'s
+    `previously_rejected` does this for candidates-*.yaml; this is the same
+    fix for fsftid-backfill.yaml, covering both `aplicades/` and
+    `descartades/` plus whatever is still open in the current file (a
+    contributor's own in-progress edits should not be reproposed either).
+    """
+    decided: set[tuple[str, str]] = set()
+    candidates = [reports_dir / "fsftid-backfill.yaml"]
+    for folder in ("aplicades", "descartades"):
+        candidates.append(reports_dir / folder / "fsftid-backfill.yaml")
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+        except yaml.YAMLError:
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("accept") is None:
+                continue
+            target = str(entry.get("target", "")).strip("@")
+            fsftid = str(entry.get("fsftid", ""))
+            if target and fsftid:
+                decided.add((target, fsftid))
+    return decided
+
+
+def write_proposals(matches: list[Match], path: Path, reports_dir: Path = REPORTS) -> int:
     """YAML proposals for tools/apply.py. Confident ones are pre-accepted."""
+    decided = previously_decided(reports_dir)
     out = [
         f"# Propostes per escriure _FSFTID a «{tree_path().name}».",
         "#",
@@ -424,6 +479,8 @@ def write_proposals(matches: list[Match], path: Path) -> int:
         if m.bucket == "unmatched" or not m.best:
             continue
         c, f = m.canon, m.best.fs
+        if (c.xref, f.fsftid) in decided:
+            continue
         accept = "true" if m.bucket == "confident" else "null"
         out.extend(
             [

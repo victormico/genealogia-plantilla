@@ -19,7 +19,7 @@ from pathlib import Path
 from tools.gedcom.lines import GedcomFile
 from tools.render import PlaceBook, render_date, render_individual, render_name
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.config import ROOT
 EXAMPLE = ROOT / "exemple.ged"
 
 _failures: list[str] = []

@@ -30,7 +30,7 @@ from . import config
 from .config import tree_path
 from .people import Tree
 
-ROOT = Path(__file__).resolve().parents[1]
+from .config import ROOT
 FONTS = ROOT / "Fonts"
 REPORTS = ROOT / "reports"
 

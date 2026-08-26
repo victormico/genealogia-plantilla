@@ -19,7 +19,7 @@ from tools.estat import Estat, render
 from tools.lint import Report, check_cr_id, check_rutes, check_xifres
 from tools.people import Tree
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.config import ROOT
 CANONICAL = ROOT / "exemple.ged"
 
 _failures: list[str] = []
@@ -210,6 +210,24 @@ def test_break_it_on_purpose(estat: Estat) -> None:
         check(bool(named), "--xifres falla i anomena la fila")
         check(any("README.md:" in p for p in named),
               "i diu el fitxer i la línia", str(named[:1]))
+    finally:
+        readme.write_text(original, encoding="utf-8")
+
+    # The other half of --xifres: a generation row, whose total is not a number
+    # anybody should be typing either. G6 has 2**5 = 32 slots whatever the tree.
+    filled, _ = estat.generation(6)
+    try:
+        readme.write_text(
+            original + f"\n| Sisena generació | **{filled + 1} de 32** |\n",
+            encoding="utf-8",
+        )
+        collected = Report()
+        check_xifres(estat, collected)
+        named = [p for p in collected.problems if "Sisena generació" in p]
+        check(bool(named), "--xifres comprova també les files de generació",
+              "; ".join(collected.problems[:3]))
+        check(any(f"{filled} de 32" in p for p in named),
+              "i diu quantes caselles són de veres", str(named[:1]))
     finally:
         readme.write_text(original, encoding="utf-8")
 

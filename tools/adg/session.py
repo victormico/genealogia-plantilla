@@ -37,7 +37,7 @@ import requests
 
 from .. import config
 
-ROOT = Path(__file__).resolve().parents[2]
+from ..config import ROOT
 CACHE_DIR = ROOT / "cache" / "adg"
 
 # The catalogue is JSON over PHP; the images are a public S3 bucket.
