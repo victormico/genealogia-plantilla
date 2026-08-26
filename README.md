@@ -59,22 +59,20 @@ que és el que necessita una tasca programada que no arrenca dins del repositori
 ## El skill per al Claude Code
 
 El mètode —planificar abans de cercar, com es pesa una prova, com se cita, on va
-cada cosa— és un **skill** que hi ha en aquest mateix repositori, a
-`plugins/genealogia/`. No es copia: s'instal·la des d'aquí.
+cada cosa— és un **skill**, i viu al seu repositori:
+[victormico/claude-family-history-research-skill](https://github.com/victormico/claude-family-history-research-skill).
+És un fork del [d'Erik Maynard](https://github.com/emaynard/claude-family-history-research-skill)
+(MIT), mantingut com a fork perquè el que faci amunt es puga fusionar.
 
 ```
-/plugin marketplace add victormico/genealogia-plantilla
+/plugin marketplace add victormico/claude-family-history-research-skill
 ```
 
-O directament, sense escriure res: el `.claude/settings.json` d'aquest repositori
-i el de l'arbre de família ja el declaren, o sigui que en obrir-hi una sessió ja
-hi és.
+O sense escriure res: el `.claude/settings.json` d'aquest repositori ja el
+declara, o sigui que en obrir-hi una sessió ja hi és.
 
-Deriva de [claude-family-history-research-skill](https://github.com/emaynard/claude-family-history-research-skill)
-d'Erik Maynard (MIT), i hi afegeix el que no hi podia ser: les eines d'aquest
-repositori, l'estructura de `Fonts/`, i com es descriuen els arxius al
-`config.yaml`. La llista sencera del que ve d'on és a
-`plugins/genealogia/skills/recerca-genealogica/ATRIBUCIO.md`.
+Hi afegeix el que no hi podia ser: les eines d'aquest repositori, l'estructura de
+`Fonts/` i com es descriuen els arxius al `config.yaml`.
 
 ## Comença aquí
 
