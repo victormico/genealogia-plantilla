@@ -25,12 +25,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import config
+from ..config import ROOT
 from ..normalize import fold
 from ..people import Person
 from .api import Api
 from .session import add_common_args, build_session
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+# The repository being worked on, exactly as every other module gets it. This
+# used to be `Path(__file__).resolve().parents[2]`, which was the repository
+# root only for as long as `tools/` was a folder copied inside each family
+# repository. Once the tools became an installed package, `parents[2]` became
+# `site-packages`, and the pedigree was written to
+# `…/site-packages/cache/pedigree.json` -- a path nothing else in the package
+# looks at, because `config.ROOT` finds the repository from the working
+# directory the way git does. See the note in `config._find_root`.
+#
+# Nothing failed out loud. `tools.frontier` looked for the pedigree in the
+# repository, did not find it, and quietly fell back to the committed
+# `reports/frontier-fs.json` snapshot -- so the reports kept being written,
+# just never from the fresh pedigree the fetch had gone and paid for.
+PEDIGREE = ROOT / "cache" / "pedigree.json"
 
 
 def _facts(person: dict) -> dict[str, dict]:
@@ -366,7 +380,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--out",
-        default=ROOT_DIR / "cache" / "pedigree.json",
+        default=PEDIGREE,
         help="where to write the fetched pedigree",
     )
     args = parser.parse_args()
