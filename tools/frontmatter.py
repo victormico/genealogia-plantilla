@@ -36,7 +36,22 @@ from .config import ROOT
 FONTS = ROOT / "Fonts"
 PERSONES = ROOT / "Persones"
 
-TIPUS = {"transcripcio", "cas", "recerca", "informe", "familia", "persona"}
+# What kind of document the note is. Not what it says, and not how much it is
+# worth -- that is `classe` below -- but which of the handful of jobs a note in
+# `Fonts/` can be doing.
+#
+# `tramit` is the paperwork an archive makes you file, and the answer it sends
+# back: a formal request under a records law, the reply saying what was found and
+# what was not. It earns its own value because it is neither of the two it would
+# otherwise be filed under. Not a `transcripcio`: nothing historical is being
+# transcribed, and the document is one we produced or received this year rather
+# than something read out of a book. Not a `recerca` either: a research note
+# records what somebody worked out, while this records what was asked for, on
+# what date, under which reference, and what came back. Filing one is often the
+# only route to a record at all, so the request and its answer are worth keeping
+# whether or not they turn anything up -- a "we hold nothing for those years" is
+# a result, and the note is what stops it being asked again.
+TIPUS = {"transcripcio", "cas", "recerca", "informe", "familia", "persona", "tramit"}
 
 # How the document relates to the event it records. This is the confidence
 # hierarchy worth writing down, made answerable.

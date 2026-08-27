@@ -157,6 +157,33 @@ def test_check_catches_each_fault(tree: Tree) -> None:
                   "; ".join(report.problems[:3]))
 
 
+def test_tramit_is_accepted(tree: Tree) -> None:
+    """`tramit` is a document kind, not a typo.
+
+    The paperwork an archive makes you file -- a formal request and the reply
+    saying what was found -- used to have nowhere to go: `transcripcio` claims
+    something historical is being transcribed, `recerca` claims somebody worked
+    something out. Both were wrong for a covering letter, so the notes were
+    reported as an invented `tipus`. The sibling check below keeps a genuinely
+    invented one rejected, so this is a vocabulary entry and not a hole.
+    """
+    print("\nun tràmit d'arxiu és un tipus, no una errada")
+    with tempfile.TemporaryDirectory() as tmp:
+        with _Sandbox(Path(tmp)) as fonts:
+            note = NOTE_TEMPLATE.replace("tipus: transcripcio", "tipus: tramit")
+            (fonts / "Instancia_2358005.md").write_text(note, encoding="utf-8")
+            report = Report()
+            fm.check(report, tree)
+            check(not report.problems, "s'accepta «tramit»",
+                  "; ".join(report.problems[:3]))
+
+            invented = NOTE_TEMPLATE.replace("tipus: transcripcio", "tipus: instancia")
+            (fonts / "Instancia_2358005.md").write_text(invented, encoding="utf-8")
+            report = Report()
+            fm.check(report, tree)
+            check(bool(report.problems), "i «instancia», que no és del vocabulari, no")
+
+
 def test_arxiu_open_until_configured() -> None:
     """`arxiu:` accepts anything while `frontmatter: arxius:` is empty, as shipped."""
     print("\narxiu obert fins que es configura")
@@ -279,6 +306,7 @@ def main() -> int:
     tree = Tree(CANONICAL)
     test_yaml_traps()
     test_check_catches_each_fault(tree)
+    test_tramit_is_accepted(tree)
     test_arxiu_open_until_configured()
     test_wrong_xref_is_caught(tree)
     test_spelling_drift_is_tolerated(tree)
