@@ -18,7 +18,7 @@ name: Recerca FamilySearch
 
 on:
   schedule:
-    - cron: '0 6 * * 1' # dilluns 06:00 UTC
+    - cron: '0 6 * * *' # cada dia 06:00 UTC
   workflow_dispatch:
     inputs:
       root:
@@ -33,6 +33,9 @@ on:
       depth:
         description: "Generacions per amunt dels pares a proposar (tools.research --depth)"
         default: '2'
+      comprovar:
+        description: "Quantes persones comprovar a FamilySearch (0 = totes les pendents)"
+        default: '0'
 
 permissions:
   contents: write
@@ -78,6 +81,32 @@ jobs:
           else
             python -m tools.fs.fetch
           fi
+
+      - name: Comprovar els fronts que el pedigrí no respon
+        # `tools.fs.fetch` només sap contestar per qui queda damunt de l'arrel.
+        # La resta de fronts enllaçats amb FamilySearch -- una branca
+        # col·lateral, un enllaç fet a mà, els que la cadena va deixar a la
+        # vuitena generació -- surten del pedigrí sense cap pare, i això no vol
+        # dir que allà no en sàpiguen: vol dir que ningú no ho ha preguntat.
+        # `frontier.md` els compta a «Sense comprovar» precisament per això.
+        #
+        # Ací es pregunta, i es pregunta ABANS d'escriure els informes, que és
+        # l'únic ordre que serveix de res: els passos d'avall llegeixen el
+        # mateix `cache/pedigree.json` que aquest enriqueix, o siga que cada
+        # persona que FamilySearch sí que en sap els pares hi arriba ja com a
+        # «A punt d'importar» en lloc de quedar-se sense comprovar. Les que
+        # no, hi arriben com a «Encallades», que també és una resposta.
+        #
+        # Una consulta per persona, en l'ordre que `frontier.md` les classifica,
+        # de manera que si el límit de peticions arriba abans que la cua
+        # s'acabi, s'ha gastat en les que més valien.
+        #
+        # Per `env:`, mai interpolat dins del `run:`, igual que els altres.
+        env:
+          COMPROVAR: ${{ inputs.comprovar }}
+        run: |
+          set -euo pipefail
+          python -m tools.fs.check --limit "${COMPROVAR:-0}"
 
       - name: Refer els informes que en depenen
         run: |
