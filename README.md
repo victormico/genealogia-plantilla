@@ -20,7 +20,7 @@ exactament què ha canviat.
 | `tools/` | les eines. Cap no porta cap nom ni cap poble escrit al codi |
 | `Fonts/` | l'estructura per a les fonts, amb les instruccions. Comença per **`Fonts/00 LLEGIU-ME.md`** |
 | `reports/` | on surten els informes generats. Els `.yaml` que hi queden són **només els que esperen una decisió teva** |
-| `.github/workflows/` | la CI: proves a cada PR, informes refets a cada merge, recerca setmanal opcional |
+| `.github/workflows/` | la CI: proves a cada PR, informes refets a cada merge, recerca diària opcional |
 
 **El que queda per fer viu com a issues del teu repositori a GitHub, no com a fitxer.**
 Un pendents.md escrit a mà —diari de tot el que ja s'ha fet barrejat amb el que
