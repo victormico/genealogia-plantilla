@@ -174,6 +174,32 @@ Comprova que la sessió funciona:
 Desa el resultat a `cache/pedigree.json`. Es pot repetir quan vulguis: les respostes
 queden a la memòria cau, així que regenerar informes no costa cap petició.
 
+### Comprovar els que el pedigrí no respon
+
+```bash
+.venv/bin/python -m tools.fs.check              # tots els pendents
+.venv/bin/python -m tools.fs.check --dry-run    # a qui preguntaria, sense consultar res
+.venv/bin/python -m tools.fs.check --limit 20   # només els vint primers de la cua
+```
+
+`tools.fs.fetch` puja per l'ascendència d'una sola arrel, o siga que només sap
+contestar per qui queda **damunt** d'aquella persona. La resta de fronts
+enllaçats amb FamilySearch —una branca col·lateral, un enllaç fet a mà, els que
+la cadena va deixar a la vuitena generació— surten del pedigrí sense cap pare, i
+això no vol dir que allà no en sàpiguen: vol dir que **ningú no ho ha
+preguntat**. És la mateixa lliçó que hi ha escrita a `tools/fs/probe.py`: una
+comprovació que no s'arriba a fer no dona un «no», dona un «no ho sé» disfressat
+de «no». `frontier.md` els compta a **Sense comprovar** justament per no fer
+aquesta confusió.
+
+`tools.fs.check` ho pregunta: una consulta per persona, en el mateix ordre que
+`frontier.md` les classifica, i el resultat s'afegeix al mateix
+`cache/pedigree.json`. Passa-l'hi **abans** de refer els informes i cadascú hi
+arribarà amb una resposta de veritat: **A punt d'importar** quan FamilySearch sí
+que en sap els pares, **Encallades** quan no. Els que ja hi són amb resposta
+negativa no es tornen a preguntar, i un 403 o un 404 deixa la persona pendent en
+lloc de donar-la per encallada.
+
 ### Veure què hi ha per fer
 
 ```bash
@@ -187,8 +213,8 @@ queden a la memòria cau, així que regenerar informes no costa cap petició.
 - **`frontier.md`** — a qui val la pena atacar, per ordre, i a quin arxiu. Cada
   persona hi surt `ready` (FamilySearch ja en sap els pares), `stuck`
   (FamilySearch també s'hi atura), `unknown` (no s'ha pogut comprovar, ni amb
-  pedigrí en viu ni amb la instantània de sota) o `unlinked` (encara no s'ha
-  trobat a FamilySearch).
+  pedigrí en viu ni amb la instantània de sota — `tools.fs.check` és qui els
+  buida) o `unlinked` (encara no s'ha trobat a FamilySearch).
 - **`worklist.md`** — enllaços de cerca per a les persones que només es poden
   resoldre anant als arxius.
 - **`estat.md`** — els comptadors de l'arbre (persones, famílies, generacions
