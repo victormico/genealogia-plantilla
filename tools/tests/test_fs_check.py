@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import sys
 
-from tools.config import example_tree
+from tools.config import ROOT, example_tree
+from tools.fs import check as check_mod
+from tools.fs import fetch as fetch_mod
 from tools.fs.check import check_person, dedupe_couples, pending, unanswered
 from tools.fs.fetch import LiveTree
 from tools.people import Person, Tree
@@ -168,6 +170,35 @@ def test_dedupe_couples() -> None:
           str(live.couples))
 
 
+def test_fetch_and_check_agree_on_the_pedigree_path() -> None:
+    """The two halves must read and write the same file.
+
+    They disagreed once, and silently: `fetch` derived its output path from
+    `Path(__file__).parents[2]`, which is the repository only while `tools/` is
+    a folder copied inside it. Installed as a package that is `site-packages`,
+    so the fetch wrote the pedigree somewhere nothing else looks -- `check`
+    reported no pedigree at all, and before this step existed `frontier` simply
+    fell back to the committed snapshot and nobody noticed the live fetch was
+    being thrown away. Both must come from `config.ROOT`.
+    """
+    print("\nfetch i check apunten al mateix pedigrí")
+    check(
+        fetch_mod.PEDIGREE == check_mod.PEDIGREE,
+        "el mateix camí a totes dues bandes",
+        f"{fetch_mod.PEDIGREE} vs {check_mod.PEDIGREE}",
+    )
+    check(
+        fetch_mod.PEDIGREE == ROOT / "cache" / "pedigree.json",
+        "i és dins del repositori, no del paquet instal·lat",
+        str(fetch_mod.PEDIGREE),
+    )
+    check(
+        "site-packages" not in str(fetch_mod.PEDIGREE),
+        "mai sota site-packages",
+        str(fetch_mod.PEDIGREE),
+    )
+
+
 def main() -> int:
     canon = Tree(CANONICAL)
     test_uncovered_person_is_pending(canon)
@@ -177,6 +208,7 @@ def main() -> int:
     test_check_person_without_parents_still_answers(canon)
     test_unreachable_person_stays_pending(canon)
     test_dedupe_couples()
+    test_fetch_and_check_agree_on_the_pedigree_path()
     print()
     if _failures:
         print(f"{len(_failures)} FAILED: {', '.join(_failures)}")
