@@ -283,6 +283,24 @@ estat:
   # vols que sigui algú que no és el número 1 de Sosa.
   arrel: ""
 
+  # Quines filiacions compten com a ascendència, amb els valors de `2 PEDI` del
+  # GEDCOM 5.5.1: birth, adopted, foster, sealing. Sense `PEDI`, és birth.
+  #
+  # En blanc vol dir `[birth]`, només la de sang: els avantpassats de qui va
+  # criar algú no són els seus, i comptar-los seria dir una descendència que cap
+  # document sosté. És el defecte, i no és bo per a tots els arbres.
+  #
+  # Quan els pares biològics són perduts per sempre —un expòsit deixat a la roda,
+  # sense nom i sense cap paper al damunt—, la família que el va criar és l'única
+  # ascendència que aquell arbre tindrà mai, i tallar-hi el recompte buida totes
+  # les caselles de dalt per una recerca que no es pot fer. Un arbre així ho diu:
+  #
+  #     filiacions_que_compten: [birth, foster]
+  #
+  # La diferència no s'amaga: `reports/estat.md` diu sempre amb quina regla ha
+  # comptat, i el perquè de cada cas viu a `Fonts/Casos/`.
+  filiacions_que_compten: [birth]
+
 # ---------------------------------------------------------------------------
 # El vocabulari de les fitxes .md (tools/frontmatter.py)
 # ---------------------------------------------------------------------------

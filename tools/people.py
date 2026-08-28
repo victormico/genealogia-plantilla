@@ -43,15 +43,42 @@ class Person:
     pedigree: str | None = None
 
     @property
+    def famc_kind(self) -> str:
+        """The `2 PEDI` value of this FAMC, lowercased; `"birth"` when absent.
+
+        Absent `PEDI` means "birth" per GEDCOM 5.5.1, so `None` and `"birth"`
+        are the same answer and every caller can compare one string.
+        """
+        return (self.pedigree or "birth").lower()
+
+    @property
     def famc_is_birth(self) -> bool:
         """Whether FAMC is a biological filiation, not adoptive/foster/sealing.
 
-        Absent `PEDI` means "birth" per GEDCOM 5.5.1, so `None` and `"birth"`
-        mean the same thing; anything else -- `foster`, `adopted`, `sealing` --
-        is not, and `Tree.ancestors()` stops the walk there rather than
-        reporting a biological line that no document supports.
+        Anything that is not `birth` -- `foster`, `adopted`, `sealing` -- is a
+        line no document of descent supports, and by default
+        `Tree.ancestors()` stops the walk there rather than reporting one.
         """
-        return self.pedigree is None or self.pedigree.lower() == "birth"
+        return self.famc_kind == "birth"
+
+    def famc_counts(self, counted: set[str] | None = None) -> bool:
+        """Whether this filiation counts as ancestry, for a given rule.
+
+        `counted` is the set of `PEDI` values that count -- what
+        `config.counted_filiations()` reads from `config.yaml`. `None` means
+        the built-in rule, biological only.
+
+        The rule is a judgement, not a fact, and it depends on the tree: where
+        the biological parents are lost for good and never coming back, the
+        family that raised someone is the only ancestry there is to count, and
+        stopping the walk leaves boxes empty that no research will ever fill.
+        Where the biological line is merely not found yet, counting the
+        adoptive one would state a descent that is false. Neither answer is
+        right for both trees, so it is the tree's own `config.yaml` that says.
+        """
+        if counted is None:
+            return self.famc_is_birth
+        return self.famc_kind in counted
 
     # -- derived ----------------------------------------------------------
 
@@ -218,7 +245,12 @@ class Tree:
             p.fsftid: p for p in self.people.values() if p.fsftid
         }
 
-    def ancestors(self, root: str, birth_only: bool = True) -> dict[int, list[str]]:
+    def ancestors(
+        self,
+        root: str,
+        birth_only: bool = True,
+        counted: set[str] | None = None,
+    ) -> dict[int, list[str]]:
         """Every ancestor slot of `root` by generation, walking FAMC.
 
         Generation 1 is the root. Returns one entry per *slot*, not per person,
@@ -232,6 +264,13 @@ class Tree:
         foster or adoptive parent's own ancestors are not this person's
         ancestors, even though Ancestris still draws the line. See
         `Person.famc_is_birth`.
+
+        `counted` widens that rule to a set of `PEDI` values -- what
+        `config.counted_filiations()` reads from `config.yaml`, e.g.
+        `{"birth", "foster"}` for a tree where the biological parents of an
+        expòsit are gone for good and the family that raised him is the only
+        ascendency there will ever be. It only applies when `birth_only` is
+        on; `birth_only=False` walks everything regardless.
         """
         by_generation: dict[int, list[str]] = {}
         frontier = [root] if root in self.people else []
@@ -241,7 +280,7 @@ class Tree:
             following = []
             for xref in frontier:
                 person = self.people[xref]
-                if birth_only and not person.famc_is_birth:
+                if birth_only and not person.famc_counts(counted):
                     continue
                 following.extend(p.xref for p in self.parents(xref))
             frontier = following

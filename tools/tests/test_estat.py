@@ -19,6 +19,7 @@ from tools.estat import Estat, render
 from tools.lint import Report, check_cr_id, check_rutes, check_xifres
 from tools.people import Tree
 
+from tools import config
 from tools.config import ROOT, example_tree
 CANONICAL = example_tree()
 
@@ -109,6 +110,57 @@ def test_foster_shrinks_a_generation() -> None:
         walked_all = tree2.ancestors("I01", birth_only=False)
         check(len(walked_all.get(2, [])) == 2,
               "birth_only=False encara hi arriba", str(walked_all))
+
+        # And the configurable rule: a tree that counts `foster` as ancestry
+        # walks through the same link without walking through everything.
+        counted = tree2.ancestors("I01", counted={"birth", "foster"})
+        check(len(counted.get(2, [])) == 2,
+              "amb `foster` comptat, la G2 hi torna a ser", str(counted))
+        check(tree2.people["I01"].famc_counts({"birth", "foster"}),
+              "famc_counts diu que sí amb la regla que el compta")
+        check(not tree2.people["I01"].famc_counts({"birth"}),
+              "i que no amb la regla per defecte")
+        adopted = tree2.ancestors("I01", counted={"birth", "adopted"})
+        check(2 not in adopted or not adopted[2],
+              "comptar `adopted` no arrossega el `foster`", str(adopted))
+
+
+def test_counted_filiations() -> None:
+    """The config knob itself: which `2 PEDI` values count as ancestry."""
+    print("\nquines filiacions compten")
+    check(config.counted_filiations() == {"birth"},
+          "la plantilla compta només la de sang",
+          str(config.counted_filiations()))
+
+    def read(value):
+        config.load.cache_clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yaml"
+            path.write_text(value, encoding="utf-8")
+            original = config.CONFIG_PATH
+            config.CONFIG_PATH = path
+            try:
+                return config.counted_filiations()
+            finally:
+                config.CONFIG_PATH = original
+                config.load.cache_clear()
+
+    check(read("estat:\n  filiacions_que_compten: [birth, foster]\n")
+          == {"birth", "foster"}, "una llista es llegeix tal qual")
+    check(read("estat:\n  filiacions_que_compten: FOSTER\n") == {"foster"},
+          "un sol valor, i les majúscules no importen")
+    check(read("estat:\n  arrel: I01\n") == {"birth"},
+          "sense la clau, la de sang i prou")
+    check(read("estat:\n  filiacions_que_compten: []\n") == {"birth"},
+          "una llista buida no deixa l'arbre sense cap generació")
+    try:
+        read("estat:\n  filiacions_que_compten: [criança]\n")
+    except config.ConfigError as exc:
+        check("filiacions_que_compten" in str(exc),
+              "un valor que no és del GEDCOM s'atura i diu què acceptaria",
+              str(exc))
+    else:
+        check(False, "un valor que no és del GEDCOM s'atura")
 
 
 def test_counts(estat: Estat) -> None:
@@ -264,6 +316,7 @@ def main() -> int:
     estat = Estat(CANONICAL, root=_example_root(CANONICAL))
     test_generation_table(estat)
     test_foster_shrinks_a_generation()
+    test_counted_filiations()
     test_counts(estat)
     test_checks_are_read_only(estat)
     test_writer_guard()

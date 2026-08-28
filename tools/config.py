@@ -330,6 +330,48 @@ def estat_root() -> str | None:
     return str(root) if root else None
 
 
+# The `2 PEDI` values GEDCOM 5.5.1 allows under a `FAMC`. Absent means `birth`.
+PEDIGREES = ("birth", "adopted", "foster", "sealing")
+
+
+def counted_filiations() -> set[str]:
+    """Which `2 PEDI` filiations count as ancestry, for `tools.estat`.
+
+    Unset means `{"birth"}` alone: an adoptive or foster parent's own
+    ancestors are not the child's, and counting them would state a descent no
+    document supports. That is the right default, and it is not right
+    everywhere.
+
+    Where the biological parents are lost for good -- an expòsit left at a
+    foundling wheel, with no name and no paper above him -- the family that
+    raised him is the only ascendency that tree will ever have, and stopping
+    the walk empties every box above him for a search that cannot be done.
+    Such a tree lists the filiations it wants counted:
+
+        estat:
+          filiacions_que_compten: [birth, foster]
+
+    The distinction stays visible either way: the walk is still done both ways
+    and `reports/estat.md` says which rule produced its table.
+    """
+    raw = get("estat", "filiacions_que_compten", default=None)
+    if raw is None:
+        return {"birth"}
+    if isinstance(raw, str):
+        raw = [raw]
+    kinds = {str(k).strip().lower() for k in raw if str(k).strip()}
+    unknown = sorted(kinds - set(PEDIGREES))
+    if unknown:
+        raise ConfigError(
+            f"{CONFIG_PATH.name}: «estat.filiacions_que_compten» només accepta "
+            f"{', '.join(PEDIGREES)} —els valors de `2 PEDI` del GEDCOM 5.5.1—, "
+            f"i hi ha {', '.join(unknown)}."
+        )
+    # An empty list would count nothing at all and report a tree with one
+    # generation, which is never what anybody meant to write.
+    return kinds or {"birth"}
+
+
 def frontmatter_archives() -> dict[str, str]:
     """`Fonts/` short code -> the archive's full name, for `tools.frontmatter`.
 
