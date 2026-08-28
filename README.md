@@ -221,6 +221,14 @@ lloc de donar-la per encallada.
   d'avantpassats), calculats i no retipiats. `tools.lint --xifres` compara
   aquests números amb el que digui el `README.md` a mà, si hi repeteixes cap.
 
+  Les caselles d'avantpassats es compten recorrent els `FAMC`, i **una filiació
+  `2 PEDI foster` o `adopted` atura el recorregut**: els avantpassats de qui va
+  criar algú no són els seus. Quan els pares de sang són perduts per sempre —un
+  expòsit deixat a la roda—, tallar-ho buida caselles per una recerca que no es
+  pot fer, i llavors val més comptar la família que el va criar: es diu a
+  `config.yaml`, amb `estat: filiacions_que_compten: [birth, foster]`.
+  L'informe diu sempre amb quina regla ha comptat.
+
 Cada cop que `tools.frontier` es pot connectar a FamilySearch amb credencials
 (`cache/pedigree.json`), desa a `reports/frontier-fs.json` una instantània de
 només els fets que l'informe imprimeix. Els dies que no hi ha credencials —a

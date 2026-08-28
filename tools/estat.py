@@ -8,10 +8,13 @@ is the check that catches that; this is what it checks against.
 The generation table is the one that needs real work: recompute by walking the
 `FAMC` links from the root instead of reading Sosa labels, because Ancestris
 labels each person with their lowest Sosa number only, so reading
-`_SOSADABOVILLE` undercounts implex. `Tree.ancestors()` walks the links, and
-skips a `2 PEDI foster` -- a filiation the tree records but a document does not
-support -- which is why a generation's filled slots can be fewer than the
-`2^(n-1)` that are structurally possible.
+`_SOSADABOVILLE` undercounts implex. `Tree.ancestors()` walks the links, and by
+default skips a `2 PEDI foster` -- a filiation the tree records but a document
+does not support -- which is why a generation's filled slots can be fewer than
+the `2^(n-1)` that are structurally possible. A tree where the biological line
+is gone for good and the family that raised someone is the only ascendency it
+will ever have says so in `config.yaml`, under
+`estat.filiacions_que_compten`; see `config.counted_filiations()`.
 
 Usage:
 
@@ -54,7 +57,10 @@ class Estat:
     def __init__(self, canonical: Path | None = None, root: str | None = None):
         self.tree = Tree(canonical or tree_path())
         self.root = root or config.estat_root() or _default_root(self.tree)
-        self.slots = self.tree.ancestors(self.root) if self.root else {}
+        self.counted = config.counted_filiations()
+        self.slots = (
+            self.tree.ancestors(self.root, counted=self.counted) if self.root else {}
+        )
         self.slots_with_foster = (
             self.tree.ancestors(self.root, birth_only=False) if self.root else {}
         )
@@ -114,6 +120,9 @@ class Estat:
         born to it still shows up one generation earlier; what disappears is
         the generation *above* them, where their non-biological parents would
         have counted.
+
+        Empty when `estat.filiacions_que_compten` counts every filiation the
+        tree has: then the two walks agree and there is nothing to explain.
         """
         out: dict[int, int] = {}
         for n in self.slots_with_foster:
@@ -233,6 +242,15 @@ def render(estat: Estat) -> str:
             f"persones diferents: {estat.implex} caselles són implex.**",
             "",
         ]
+        counted_extra = sorted(estat.counted - {"birth"})
+        if counted_extra:
+            out += [
+                f"Les filiacions `2 PEDI {'`, `'.join(counted_extra)}` **hi compten**, "
+                "perquè `config.yaml` ho diu a `estat.filiacions_que_compten`: qui hi "
+                "consta com a criat i no com a nascut porta els avantpassats de qui el "
+                "va criar. El raonament de cada cas té el seu fitxer a `Fonts/Casos/`.",
+                "",
+            ]
         foster = estat.foster_slots
         if foster:
             detail = ", ".join(f"G{n} en {d}" for n, d in sorted(foster.items()))
