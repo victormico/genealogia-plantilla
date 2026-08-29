@@ -18,6 +18,8 @@ pinning it.
 from __future__ import annotations
 
 import sys
+import tempfile
+from pathlib import Path
 
 from .. import research
 from ..fs.fetch import LiveTree
@@ -93,6 +95,25 @@ def test_propose_parents_includes_ancestors_at_depth_above_one() -> None:
     assert "ancestors" in proposal, "depth=3 must propose ancestors above the parents"
     names = {p["given"] for level in proposal["ancestors"] for p in level}
     assert names == {"Grandfather", "Grandmother"}, names
+
+
+def test_already_proposed_finds_only_pending_targets() -> None:
+    """The bug this pins: a target proposed yesterday with `accept: null` (not
+    yet reviewed) came back as a fresh-looking duplicate in today's file. A
+    decided target -- true or false -- is not what this guards against, so
+    only `null` entries should count."""
+    with tempfile.TemporaryDirectory() as tmp:
+        reports = Path(tmp)
+        (reports / "candidates-2026-08-28.yaml").write_text(
+            "- target: \"I00514\"\n  accept: null\n"
+            "- target: \"I00540\"\n  accept: true\n"
+            "- target: \"I00570\"\n  accept: false\n",
+            encoding="utf-8",
+        )
+        pending = research.already_proposed(reports)
+        assert "I00514" in pending, "an undecided target must be found"
+        assert "I00540" not in pending, "an accepted target is decided, not pending"
+        assert "I00570" not in pending, "a rejected target is decided, not pending"
 
 
 def run() -> int:
