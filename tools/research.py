@@ -261,6 +261,30 @@ def previously_rejected(reports: Path) -> dict[str, str]:
     return out
 
 
+def already_proposed(reports: Path) -> dict[str, str]:
+    """Targets with a proposal still waiting on a decision in an open
+    `reports/candidates-*.yaml`.
+
+    `previously_rejected` keeps a `false` from coming back; this keeps a
+    still-undecided `null` from coming back too. Without it, a target
+    proposed yesterday and not yet reviewed gets a second, identical-looking
+    proposal in today's file instead of waiting for a decision on the first
+    one -- which is what happened before this existed: the same three
+    candidates, verbatim, in `candidates-2026-08-28.yaml` and
+    `candidates-2026-08-29.yaml` alike.
+    """
+    out: dict[str, str] = {}
+    for path in sorted(reports.glob("candidates-*.yaml")):
+        try:
+            entries = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+        except yaml.YAMLError:
+            continue
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("accept") is None:
+                out[str(entry.get("target", "")).strip("@")] = path.name
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     add_common_args(parser)
@@ -344,6 +368,15 @@ def main() -> int:
             f"{e.person.surname} (a {rejected[e.person.xref]})"
         )
     entries = [e for e in entries if e.person.xref not in rejected]
+
+    pending = already_proposed(REPORTS)
+    waiting = [e for e in entries if e.person.xref in pending]
+    for e in waiting:
+        print(
+            f"  ja proposada  @{e.person.xref}@ {e.person.given} "
+            f"{e.person.surname}: pendent de decisió a {pending[e.person.xref]}"
+        )
+    entries = [e for e in entries if e.person.xref not in pending]
 
     proposals: list[dict] = []
     api = None
