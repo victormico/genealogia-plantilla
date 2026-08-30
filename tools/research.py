@@ -36,7 +36,7 @@ from .frontier import (
     index_documents,
     snapshot_load,
 )
-from .fs.api import Api
+from .fs.api import Api, citation_key
 from .fs.fetch import LiveTree
 from .fs.session import add_common_args, build_session
 from .normalize import place_key
@@ -87,6 +87,52 @@ def upstream_chain(
     return levels
 
 
+CITATIONS_SHOWN = 6
+
+
+def pick_citations(cites: list[dict], shared: set[str], limit: int = CITATIONS_SHOWN) -> list[dict]:
+    """The documents worth printing, the corroborating ones first.
+
+    A well-worked person can carry fifty attached sources and printing them all
+    would bury the proposal in the noise it is supposed to cut through. The ones
+    that also hang on the target go first and are flagged, because those are the
+    ones that decide anything.
+    """
+    marked = [
+        {**c, "shared_with_target": True} if citation_key(c) in shared else c
+        for c in cites
+    ]
+    marked.sort(key=lambda c: not c.get("shared_with_target"))
+    return marked[:limit]
+
+
+def corroborating_documents(
+    api: "Api | None", target_pid: str | None, parents: list[Person]
+) -> tuple[dict[str, list[dict]], dict[str, set[str]]]:
+    """What FamilySearch cites for each proposed parent, and what it shares with the target.
+
+    The shared part is the whole reason for the call. A document attached to the
+    child *and* to the parent is FamilySearch saying one record covers them both
+    -- a baptism that names the father, most of the time -- and that is evidence
+    about the link itself, not about how carefully somebody typed.
+
+    Costs one request per person and they are all cached, so a re-run is free.
+    Ancestors above the parents are deliberately not asked about: it would
+    multiply the requests by the depth to corroborate links nobody is being
+    asked to accept yet.
+    """
+    if api is None or not target_pid:
+        return {}, {}
+    # Keyed by the document, not by the person's entry in it -- see citation_key.
+    on_target = {citation_key(c) for c in api.citations(target_pid)} - {""}
+    cites = {q.xref: api.citations(q.xref) for q in parents}
+    shared = {
+        pid: {k for c in found if (k := citation_key(c)) in on_target}
+        for pid, found in cites.items()
+    }
+    return cites, shared
+
+
 def propose_parents(
     entry: FrontierEntry,
     live: LiveTree,
@@ -94,6 +140,8 @@ def propose_parents(
     depth: int,
     docs: dict,
     api: "Api | None" = None,
+    contributors: bool = True,
+    citations: bool = True,
 ) -> dict:
     p = entry.person
     parents = entry.fs_parents
@@ -104,12 +152,17 @@ def propose_parents(
     # against relatives and registers. So his own data is trusted by default.
     mine: list[str] = []
     editors: dict[str, list[str]] = {}
-    if api is not None and api.fs.tree_user_id:
+    if api is not None and contributors and api.fs.tree_user_id:
         for q in parents:
-            contributors = api.contributors(q.xref)
-            editors[q.xref] = sorted(set(contributors.values()))
-            if api.fs.tree_user_id in contributors:
+            who = api.contributors(q.xref)
+            editors[q.xref] = sorted(set(who.values()))
+            if api.fs.tree_user_id in who:
                 mine.append(q.xref)
+
+    cited, shared = corroborating_documents(
+        api if citations else None, p.fsftid, parents
+    )
+    corroborated = [pid for pid, urls in shared.items() if urls]
 
     # Confidence is about the *link*, not about FamilySearch being tidy. A
     # certificate of our own naming the parent is the strongest evidence here.
@@ -119,6 +172,18 @@ def propose_parents(
     elif entry.parent_documents:
         confidence = "high"
         why = "un document nostre anomena el progenitor proposat"
+    elif corroborated:
+        # The case this rule was written for: I00514 Antonio Valiente came out
+        # `low` -- «poques dades, entrades per altri» -- while the 1786 baptism
+        # that names him and his father in the same line was attached to both of
+        # them all along. Reading a citation is not trusting a stranger's typing.
+        confidence = "high"
+        why = (
+            "un mateix document de FamilySearch anomena el target i "
+            + ("tots dos progenitors" if len(corroborated) == len(parents) == 2
+               else "el progenitor proposat" if len(corroborated) == 1 == len(parents)
+               else f"{len(corroborated)} de {len(parents)} progenitors")
+        )
     elif mine:
         confidence = "medium"
         why = f"{len(mine)} de {len(parents)} progenitors els vas entrar tu a FamilySearch"
@@ -143,6 +208,11 @@ def propose_parents(
                 **person_block(q, entry.parent_documents.get(q.xref)),
                 **({"editors": editors[q.xref]} if q.xref in editors else {}),
                 **({"entrat_per_tu": True} if q.xref in mine else {}),
+                **(
+                    {"citations": pick_citations(cited[q.xref], shared.get(q.xref, set()))}
+                    if cited.get(q.xref)
+                    else {}
+                ),
             }
             for q in parents
         ],
@@ -301,7 +371,14 @@ def main() -> int:
     parser.add_argument(
         "--no-contributors",
         action="store_true",
-        help="skip looking up who edited each person on FamilySearch (works offline)",
+        help="skip looking up who edited each person on FamilySearch "
+        "(with --no-citations too, the run needs no session at all)",
+    )
+    parser.add_argument(
+        "--no-citations",
+        action="store_true",
+        help="skip reading the documents FamilySearch cites for each person "
+        "(one cached request per person; they are what corroborates a link)",
     )
     parser.add_argument(
         "--search",
@@ -382,9 +459,15 @@ def main() -> int:
     api = None
     for entry in entries:
         if entry.status == "ready":
-            if api is None and not args.no_contributors:
+            if api is None and not (args.no_contributors and args.no_citations):
                 api = Api(build_session(args))
-            proposals.append(propose_parents(entry, live, known, args.depth, docs, api))
+            proposals.append(
+                propose_parents(
+                    entry, live, known, args.depth, docs, api,
+                    contributors=not args.no_contributors,
+                    citations=not args.no_citations,
+                )
+            )
             print(
                 f"  parents  @{entry.person.xref}@ {entry.person.given} "
                 f"{entry.person.surname}: {len(entry.fs_parents)} progenitors"

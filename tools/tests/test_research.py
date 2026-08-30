@@ -97,6 +97,137 @@ def test_propose_parents_includes_ancestors_at_depth_above_one() -> None:
     assert names == {"Grandfather", "Grandmother"}, names
 
 
+class _FakeApi:
+    """Just enough Api to answer `citations`, with no session behind it.
+
+    `corroborating_documents` is the only thing under test here, and what it
+    needs from FamilySearch is one list per person. Standing up a real session
+    to assert on a set intersection would test the network, not the rule.
+    """
+
+    class _NoSession:
+        # No tree user id, so the contributor lookup sits this out and each
+        # test below is about the citations and nothing else.
+        tree_user_id = None
+
+    def __init__(self, by_pid: dict[str, list[dict]]):
+        self.by_pid = by_pid
+        self.asked: list[str] = []
+        self.fs = self._NoSession()
+
+    def citations(self, pid: str) -> list[dict]:
+        self.asked.append(pid)
+        return self.by_pid.get(pid, [])
+
+
+# `url` differs per person even for one document -- it is that person's entry
+# in the record -- so these carry both fields, the way the live API sends them.
+BAPTISM = {"url": "ark:/1786-son", "document": "ark:/61903/1:1:NSB1-J6P",
+           "title": "bateig de 1786", "names": ["Antonio Baliente", "Juan Baliente"]}
+BAPTISM_AS_FATHER = {**BAPTISM, "url": "ark:/1786-father"}
+BURIAL = {"url": "ark:/1807", "document": "ark:/61903/1:1:FNMW-XQ9",
+          "title": "defunció de 1807"}
+
+
+def _entry_with_parents():
+    live = _three_generation_tree()
+    target = live.people["F-TARGET"]
+    target.fsftid = "F-TARGET"
+    entry = research.FrontierEntry(person=target, status="ready")
+    entry.fs_parents = live.parents("F-TARGET")
+    return live, entry
+
+
+def test_a_shared_document_lifts_a_proposal_out_of_low() -> None:
+    """The rule issue #70 is the reason for.
+
+    Two parents entered by strangers with no birth dates is the `low` case --
+    and it stays `low` however good the evidence is, because nothing was
+    reading the evidence. A register entry attached to the child and to the
+    father alike is FamilySearch saying one document covers them both.
+    """
+    live, entry = _entry_with_parents()
+    api = _FakeApi({
+        "F-TARGET": [BAPTISM],
+        "F-FATHER": [BAPTISM_AS_FATHER, BURIAL],
+        "F-MOTHER": [BURIAL],
+    })
+
+    without = research.propose_parents(entry, live, set(), 1, {}, api=None)
+    assert without["confidence"] == "low", without["confidence"]
+
+    with_docs = research.propose_parents(entry, live, set(), 1, {}, api=api)
+    assert with_docs["confidence"] == "high", with_docs["confidence"]
+    assert "anomena el target" in with_docs["why"], with_docs["why"]
+    # Only the father shares the baptism, and the `why` has to say so rather
+    # than imply the mother is corroborated too.
+    assert "1 de 2 progenitors" in with_docs["why"], with_docs["why"]
+
+
+def test_why_says_when_both_parents_are_corroborated() -> None:
+    live, entry = _entry_with_parents()
+    api = _FakeApi({
+        "F-TARGET": [BAPTISM],
+        "F-FATHER": [BAPTISM_AS_FATHER],
+        "F-MOTHER": [BAPTISM_AS_FATHER],
+    })
+    proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
+    assert "tots dos progenitors" in proposal["why"], proposal["why"]
+
+
+def test_the_shared_document_is_flagged_on_the_parent_that_shares_it() -> None:
+    live, entry = _entry_with_parents()
+    api = _FakeApi({
+        "F-TARGET": [BAPTISM],
+        "F-FATHER": [BURIAL, BAPTISM_AS_FATHER],  # listed second by FamilySearch
+        "F-MOTHER": [BURIAL],
+    })
+    proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
+    father, mother = proposal["parents"]
+
+    assert father["citations"][0]["document"] == BAPTISM["document"], \
+        "the shared one is hoisted to the top"
+    assert father["citations"][0]["shared_with_target"] is True
+    assert "shared_with_target" not in father["citations"][1], "the burial is his alone"
+    assert not any(c.get("shared_with_target") for c in mother["citations"]), \
+        "the mother shares nothing with the target and must not be flagged"
+
+
+def test_unshared_documents_do_not_inflate_confidence() -> None:
+    """Attached sources are common; *shared* ones are the signal.
+
+    A parent with a dozen citations that have nothing to do with the child is
+    exactly the well-worked stranger's entry the `low` rating is warning about.
+    """
+    live, entry = _entry_with_parents()
+    api = _FakeApi({"F-TARGET": [], "F-FATHER": [BURIAL] * 12, "F-MOTHER": [BAPTISM]})
+    proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
+    assert proposal["confidence"] == "low", proposal["confidence"]
+
+
+def test_citations_can_be_switched_off() -> None:
+    live, entry = _entry_with_parents()
+    api = _FakeApi({"F-TARGET": [BAPTISM], "F-FATHER": [BAPTISM_AS_FATHER]})
+    proposal = research.propose_parents(entry, live, set(), 1, {}, api=api, citations=False)
+    assert api.asked == [], "no requests may be spent when the flag is off"
+    assert proposal["confidence"] == "low", proposal["confidence"]
+    assert all("citations" not in q for q in proposal["parents"])
+
+
+def test_a_long_source_list_is_trimmed() -> None:
+    """Gil Gomez Valiente carries 55 attached sources. Printing them all would
+    bury the one proposal line a reviewer has to read."""
+    live, entry = _entry_with_parents()
+    many = [{"url": f"ark:/{n}", "document": f"ark:/doc-{n}", "title": f"document {n}"}
+            for n in range(40)]
+    api = _FakeApi({"F-TARGET": [BAPTISM], "F-FATHER": many + [BAPTISM_AS_FATHER]})
+    proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
+    father = proposal["parents"][0]
+    assert len(father["citations"]) == research.CITATIONS_SHOWN, len(father["citations"])
+    assert father["citations"][0]["document"] == BAPTISM["document"], \
+        "trimming must never drop the corroborating one"
+
+
 def test_already_proposed_finds_only_pending_targets() -> None:
     """The bug this pins: a target proposed yesterday with `accept: null` (not
     yet reviewed) came back as a fresh-looking duplicate in today's file. A
