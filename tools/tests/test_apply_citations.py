@@ -12,10 +12,18 @@ real family.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from tools.apply import _citation_specs, _link_citations, apply_parents
 from tools.gedcom.lines import GedcomFile
 from tools.gedcom.splice import Splicer
+
+# Resolved next to this file, and not as a path relative to the working
+# directory: that only exists when the run starts in the package's own
+# checkout. The family repositories pip-install these tools and run the suite
+# from their own root, where no such directory is there -- which is exactly
+# where this first broke.
+EXEMPLE = str(Path(__file__).resolve().parent / "exemple.ged")
 
 _failures: list[str] = []
 
@@ -85,7 +93,7 @@ def test_only_shared_documents_are_evidence_for_the_link() -> None:
 
 def test_citations_reach_the_gedcom() -> None:
     print("\nwhat gets written")
-    ged = GedcomFile("tools/tests/exemple.ged")
+    ged = GedcomFile(EXEMPLE)
     splicer = Splicer(ged)
     apply_parents(splicer, ged, [_proposal()])
     lines = splicer.apply()
@@ -116,7 +124,7 @@ def test_a_proposal_without_citations_still_imports() -> None:
     entry = _proposal()
     for parent in entry["parents"]:
         parent.pop("citations")
-    ged = GedcomFile("tools/tests/exemple.ged")
+    ged = GedcomFile(EXEMPLE)
     splicer = Splicer(ged)
     apply_parents(splicer, ged, [entry])
     lines = splicer.apply()
