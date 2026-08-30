@@ -9,6 +9,7 @@ Rather than discover that mid-research, find out once and record it. Run:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from .. import config
@@ -82,10 +83,30 @@ def main() -> int:
     )
     parser.add_argument("--surname", default=None, help="a surname to test the searches with")
     parser.add_argument("--place", default=None, help="a place to test the searches with")
+    parser.add_argument(
+        "--sources",
+        metavar="PID",
+        help="print the raw /sources payload for one person, and what "
+        "Api.citations makes of it, then stop",
+    )
     args = parser.parse_args()
 
     fs = build_session(args)
     api = Api(fs)
+
+    if args.sources:
+        # `Api.citations` is written against the GEDCOM X spec, which leaves most
+        # of these fields optional -- so it is written to degrade rather than to
+        # assume. This prints both sides at once so the guess can be checked
+        # against what FamilySearch actually sends, which is the only way to
+        # know: run it against a DECEASED person with sources attached.
+        raw = api.sources(args.sources)
+        print(json.dumps(raw, indent=2, ensure_ascii=False, sort_keys=True))
+        print(f"\n--- what Api.citations reads out of that ({args.sources}) ---")
+        print(json.dumps(api.citations(args.sources), indent=2, ensure_ascii=False))
+        print(f"\n{fs.stats()}")
+        return 0
+
     pid = args.pid or fs.fid
     dead = args.dead_pid or config.get("familysearch", "prova_difunt")
     # Something to put in the search boxes. Any surname reaches the endpoint;

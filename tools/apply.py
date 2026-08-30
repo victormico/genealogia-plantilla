@@ -132,6 +132,55 @@ def _source_record(splicer: Splicer, ged: GedcomFile, spec: dict, made: dict) ->
     return xref
 
 
+def _citation_specs(block: dict, shared_only: bool = False) -> list[dict]:
+    """A person block's FamilySearch citations, in the shape `_source_record` takes.
+
+    `tools.research` writes these from what FamilySearch cites for the person --
+    the parish register the baptism was read off, with its ARK. Importing them
+    is the difference between an ancestor who arrives with «FamilySearch Family
+    Tree» hung on him and one who arrives with the 1786 baptism that names him.
+
+    Anything without a usable title is dropped rather than imported under a made
+    up name: a SOUR record keyed by an empty title would collide with the next
+    one and quietly merge two different documents.
+    """
+    out: list[dict] = []
+    for cite in block.get("citations") or ():
+        if not isinstance(cite, dict):
+            continue
+        if shared_only and not cite.get("shared_with_target"):
+            continue
+        title = str(cite.get("title") or cite.get("collection") or "").strip()
+        if not title:
+            continue
+        out.append(
+            {
+                k: v
+                for k, v in {
+                    "title": title,
+                    "url": cite.get("url"),
+                    "text": cite.get("text"),
+                }.items()
+                if v
+            }
+        )
+    return out
+
+
+def _link_citations(entry: dict) -> list[dict]:
+    """The documents that name the child and a proposed parent alike.
+
+    These belong on the FAM record, not only on the people: a register entry
+    naming both of them is evidence about the *link*, which is the thing the
+    family record asserts and the thing the proposal is asking to accept.
+    """
+    return [
+        spec
+        for block in entry.get("parents") or ()
+        for spec in _citation_specs(block, shared_only=True)
+    ]
+
+
 def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tuple[int, list[str]]:
     """Import parents (and optionally the branch above) for accepted proposals."""
     people = load_people(ged)
@@ -165,6 +214,15 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
             return existing.xref
         if pid and pid in created:
             return created[pid]
+        # The tree source says where the person came from; the citations say
+        # what the claim rests on. Both hang on the record, in that order.
+        # dict.fromkeys and not set(): one document cited twice is one SOUR
+        # pointer, but the order the proposal listed them in is the order the
+        # reviewer read them in.
+        cited = list(dict.fromkeys(
+            _source_record(splicer, ged, spec, sources_made)
+            for spec in _citation_specs(block)
+        ))
         xref = splicer.reserve_xref("I")
         splicer.append_record(
             render_individual(
@@ -177,7 +235,7 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
                 death_date=block.get("death_date"),
                 death_place=block.get("death_place"),
                 fsftid=pid,
-                source_xrefs=[source_xref] if source_xref else [],
+                source_xrefs=([source_xref] if source_xref else []) + cited,
                 object_files=block.get("documents") or [],
                 fams=fams,
                 places=places,
@@ -210,6 +268,18 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
             splicer, ged, entry.get("source") or FS_TREE_SOURCE, sources_made
         )
 
+        # A document that names the child and a parent together is evidence for
+        # the family, so it is made before the FAM record and cited on it. The
+        # same title reaching this twice -- both parents on one baptism -- is one
+        # SOUR record, because `_source_record` keys them by title.
+        # Deduped: one baptism naming the child, the father and the mother is
+        # one document, and it reaches this list once per parent that cites it.
+        link_xrefs = list(dict.fromkeys(
+            _source_record(splicer, ged, spec, sources_made)
+            for spec in _link_citations(entry)
+        ))
+        link_xrefs = [x for x in link_xrefs if x != source_xref]
+
         # The family the child belongs to, created now so parents can point at it.
         fam_xref = splicer.reserve_xref("F")
         parent_xrefs: dict[str, str | None] = {"M": None, "F": None}
@@ -233,7 +303,7 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
                 husband=parent_xrefs["M"],
                 wife=parent_xrefs["F"],
                 children=[target],
-                source_xrefs=[source_xref],
+                source_xrefs=[source_xref] + link_xrefs,
                 places=places,
                 change_date=today,
                 change_time=now_time,

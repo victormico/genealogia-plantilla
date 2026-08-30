@@ -254,6 +254,47 @@ En escriure, la versió anterior queda com a `<arbre>_<data>-<hora>.ged`, igual 
 Ancestris. Revisa-ho amb `git diff` i **obre el fitxer amb Ancestris** per confirmar
 que carrega bé; ell recalcula la numeració de Sosa.
 
+#### Els documents que FamilySearch cita
+
+Cada progenitor proposat porta un bloc `citations:` amb el que FamilySearch en
+cita: la col·lecció, el text de la citació, qui hi surt anomenat i l'ARK del
+registre. Els que també pengen del target van primer i marcats amb
+`shared_with_target: true`.
+
+Aquest és el senyal que val:
+
+```yaml
+  - given: Juan
+    surname: Gomez
+    fsftid: LB8Z-YC4
+    citations:
+    - title: 'Antonio Baliente, "España, Diócesis de Albacete, registros parroquiales, 1504-1979"'
+      names: [Antonio Baliente, Juan Baliente]
+      about: [naixement]
+      url: https://www.familysearch.org/ark:/61903/1:1:XVQ4-8QN
+      shared_with_target: true
+```
+
+Un document adjunt alhora al fill i al pare és FamilySearch dient que **un sol
+registre els cobreix tots dos** —un bateig que anomena el pare, quasi sempre—, i
+això és prova sobre l'enllaç, no sobre com de polit ha escrit ningú. Per això
+puja la proposta a `confidence: high` encara que els progenitors els haja entrats
+un desconegut.
+
+D'on ve la regla: una proposta va eixir `low` («poques dades, entrades per
+altri») mentre el bateig de 1786 que anomenava el fill i el pare en la mateixa
+línia estava adjunt als dos des del primer dia. Ningú no ho preguntava.
+
+Costa **una petició per persona** (el target i cada progenitor), totes
+cachejades, o siga que tornar a passar-ho és gratis. Els avantpassats de més
+amunt no es consulten: multiplicaria les peticions per la profunditat per a
+corroborar enllaços que encara no es demana acceptar. Amb `--no-citations` no es
+demana res; amb `--no-contributors --no-citations` la passada no necessita sessió.
+
+En acceptar, cada citació entra al GEDCOM com un `SOUR` de veritat, amb `TITL`,
+`TEXT` i l'ARK a `PUBL`, en lloc del genèric «FamilySearch Family Tree». Les
+compartides es pengen també del `FAM`, que és el registre que afirma la filiació.
+
 ### Treure de la vista el que ja està fet
 
 ```bash
