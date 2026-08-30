@@ -120,9 +120,13 @@ class _FakeApi:
         return self.by_pid.get(pid, [])
 
 
-BAPTISM = {"url": "ark:/1786", "title": "bateig de 1786",
-           "names": ["Antonio Baliente", "Juan Baliente"]}
-BURIAL = {"url": "ark:/1807", "title": "defunció de 1807"}
+# `url` differs per person even for one document -- it is that person's entry
+# in the record -- so these carry both fields, the way the live API sends them.
+BAPTISM = {"url": "ark:/1786-son", "document": "ark:/61903/1:1:NSB1-J6P",
+           "title": "bateig de 1786", "names": ["Antonio Baliente", "Juan Baliente"]}
+BAPTISM_AS_FATHER = {**BAPTISM, "url": "ark:/1786-father"}
+BURIAL = {"url": "ark:/1807", "document": "ark:/61903/1:1:FNMW-XQ9",
+          "title": "defunció de 1807"}
 
 
 def _entry_with_parents():
@@ -145,7 +149,7 @@ def test_a_shared_document_lifts_a_proposal_out_of_low() -> None:
     live, entry = _entry_with_parents()
     api = _FakeApi({
         "F-TARGET": [BAPTISM],
-        "F-FATHER": [BAPTISM, BURIAL],
+        "F-FATHER": [BAPTISM_AS_FATHER, BURIAL],
         "F-MOTHER": [BURIAL],
     })
 
@@ -164,8 +168,8 @@ def test_why_says_when_both_parents_are_corroborated() -> None:
     live, entry = _entry_with_parents()
     api = _FakeApi({
         "F-TARGET": [BAPTISM],
-        "F-FATHER": [BAPTISM],
-        "F-MOTHER": [BAPTISM],
+        "F-FATHER": [BAPTISM_AS_FATHER],
+        "F-MOTHER": [BAPTISM_AS_FATHER],
     })
     proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
     assert "tots dos progenitors" in proposal["why"], proposal["why"]
@@ -175,13 +179,14 @@ def test_the_shared_document_is_flagged_on_the_parent_that_shares_it() -> None:
     live, entry = _entry_with_parents()
     api = _FakeApi({
         "F-TARGET": [BAPTISM],
-        "F-FATHER": [BURIAL, BAPTISM],  # listed second by FamilySearch
+        "F-FATHER": [BURIAL, BAPTISM_AS_FATHER],  # listed second by FamilySearch
         "F-MOTHER": [BURIAL],
     })
     proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
     father, mother = proposal["parents"]
 
-    assert father["citations"][0]["url"] == "ark:/1786", "the shared one is hoisted to the top"
+    assert father["citations"][0]["document"] == BAPTISM["document"], \
+        "the shared one is hoisted to the top"
     assert father["citations"][0]["shared_with_target"] is True
     assert "shared_with_target" not in father["citations"][1], "the burial is his alone"
     assert not any(c.get("shared_with_target") for c in mother["citations"]), \
@@ -202,7 +207,7 @@ def test_unshared_documents_do_not_inflate_confidence() -> None:
 
 def test_citations_can_be_switched_off() -> None:
     live, entry = _entry_with_parents()
-    api = _FakeApi({"F-TARGET": [BAPTISM], "F-FATHER": [BAPTISM]})
+    api = _FakeApi({"F-TARGET": [BAPTISM], "F-FATHER": [BAPTISM_AS_FATHER]})
     proposal = research.propose_parents(entry, live, set(), 1, {}, api=api, citations=False)
     assert api.asked == [], "no requests may be spent when the flag is off"
     assert proposal["confidence"] == "low", proposal["confidence"]
@@ -213,12 +218,13 @@ def test_a_long_source_list_is_trimmed() -> None:
     """Gil Gomez Valiente carries 55 attached sources. Printing them all would
     bury the one proposal line a reviewer has to read."""
     live, entry = _entry_with_parents()
-    many = [{"url": f"ark:/{n}", "title": f"document {n}"} for n in range(40)]
-    api = _FakeApi({"F-TARGET": [BAPTISM], "F-FATHER": many + [BAPTISM]})
+    many = [{"url": f"ark:/{n}", "document": f"ark:/doc-{n}", "title": f"document {n}"}
+            for n in range(40)]
+    api = _FakeApi({"F-TARGET": [BAPTISM], "F-FATHER": many + [BAPTISM_AS_FATHER]})
     proposal = research.propose_parents(entry, live, set(), 1, {}, api=api)
     father = proposal["parents"][0]
     assert len(father["citations"]) == research.CITATIONS_SHOWN, len(father["citations"])
-    assert father["citations"][0]["url"] == "ark:/1786", \
+    assert father["citations"][0]["document"] == BAPTISM["document"], \
         "trimming must never drop the corroborating one"
 
 

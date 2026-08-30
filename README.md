@@ -257,9 +257,18 @@ que carrega bé; ell recalcula la numeració de Sosa.
 #### Els documents que FamilySearch cita
 
 Cada progenitor proposat porta un bloc `citations:` amb el que FamilySearch en
-cita: la col·lecció, el text de la citació, qui hi surt anomenat i l'ARK del
-registre. Els que també pengen del target van primer i marcats amb
-`shared_with_target: true`.
+cita: la col·lecció, el text, qui hi surt anomenat i **dos** ARK. Els documents
+que també pengen del target van primer i marcats amb `shared_with_target: true`.
+
+Els dos ARK no són el mateix i confondre'ls ho trenca tot:
+
+| camp | què és |
+| --- | --- |
+| `url` | l'entrada **d'aquesta persona** dins del registre. Pare i fill en un mateix bateig en tenen una cadascun. |
+| `document` | el registre mateix, citat dins del text. És igual per a tothom que hi surt, i és la clau que fa servir `citation_key`. |
+
+Comprovat contra l'API: el fill `G3CB-9ZT` i el pare `LB8Z-YC4` comparteixen
+**cinc documents i zero `url`**. Qui compari per `url` no trobarà mai res.
 
 Aquest és el senyal que val:
 
@@ -270,8 +279,8 @@ Aquest és el senyal que val:
     citations:
     - title: 'Antonio Baliente, "España, Diócesis de Albacete, registros parroquiales, 1504-1979"'
       names: [Antonio Baliente, Juan Baliente]
-      about: [naixement]
-      url: https://www.familysearch.org/ark:/61903/1:1:XVQ4-8QN
+      url: https://www.familysearch.org/ark:/61903/1:1:NSB1-J6D   # l'entrada del pare
+      document: ark:/61903/1:1:NSB1-J6P                            # el registre
       shared_with_target: true
 ```
 
@@ -284,6 +293,12 @@ un desconegut.
 D'on ve la regla: una proposta va eixir `low` («poques dades, entrades per
 altri») mentre el bateig de 1786 que anomenava el fill i el pare en la mateixa
 línia estava adjunt als dos des del primer dia. Ningú no ho preguntava.
+
+**Un document compartit no sempre és el bateig del target.** Pot ser el d'un
+net, on el progenitor hi surt de retruc. Continua sent corroboració —lliga el
+mateix grup familiar en un sol registre— però no és tan fort com la partida
+pròpia, i per això la decisió segueix sent teva: `high` vol dir «val la pena
+llegir-ho», no «està provat». Mira'n el `names:` i la data del `text:`.
 
 Costa **una petició per persona** (el target i cada progenitor), totes
 cachejades, o siga que tornar a passar-ho és gratis. Els avantpassats de més

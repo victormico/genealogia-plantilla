@@ -269,10 +269,24 @@ def _one_citation(desc: dict, ref: dict | None) -> dict:
         "collection": _quoted(title) or _quoted(text),
         "text": text,
         "url": _ark(desc),
+        "document": _document_ark(text),
         "names": _named(text),
         "about": _facts(ref),
     }
     return {k: v for k, v in entry.items() if v}
+
+
+def citation_key(cite: dict) -> str:
+    """What makes two citations the same document.
+
+    NOT `url`. FamilySearch's `about` is the ARK of *this person's entry* in a
+    record, so father and son on one baptism carry two different ones -- checked
+    against the live API, the son G3CB-9ZT and the father LB8Z-YC4 share exactly
+    zero `about` ARKs while sharing five documents. The ARK that identifies the
+    document itself is the one quoted inside the citation text, and that is the
+    one two people hold in common.
+    """
+    return cite.get("document") or cite.get("url") or cite.get("title") or ""
 
 
 def _first_value(items: object) -> str:
@@ -302,6 +316,18 @@ def _ark(desc: dict) -> str:
                 "https://familysearch.org/ark:", "https://www.familysearch.org/ark:"
             )
     return ""
+
+
+def _document_ark(text: str) -> str:
+    """The record's own ARK, which FamilySearch quotes inside every citation.
+
+    `"España, ...", FamilySearch (https://www.familysearch.org/ark:/61903/1:1:NSB1-J6P
+    : Sat Aug 31 07:56:01 UTC 2024), Entry for Antonio Baliente and Juan
+    Baliente, 22 Apr 1786.` -- the ARK in the middle is the document, and it is
+    the same string on everyone attached to it.
+    """
+    match = re.search(r"ark:/\d+/[A-Za-z0-9:.\-]+", text or "")
+    return match.group(0).rstrip(".:") if match else ""
 
 
 def _quoted(text: str) -> str:

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import sys
 
-from tools.fs.api import _citations
+from tools.fs.api import _citations, citation_key
 
 _failures: list[str] = []
 
@@ -31,23 +31,41 @@ def check(cond: bool, label: str, detail: str = "") -> None:
         _failures.append(label)
 
 
-ARK = "https://www.familysearch.org/ark:/61903/1:1:XVQ4-8QN"
+# The real ARKs of the 1786 baptism, read off the live API on 30-08-2026. Two
+# different ones, and the difference is the whole point: `about` is the ARK of
+# THIS PERSON's entry in the record, so the son and the father each have their
+# own, while the ARK quoted inside the citation is the document and is the same
+# string for both.
+DOCUMENT = "ark:/61903/1:1:NSB1-J6P"
+SON_ENTRY = "https://www.familysearch.org/ark:/61903/1:1:NSB1-J6X"
+FATHER_ENTRY = "https://www.familysearch.org/ark:/61903/1:1:NSB1-J6D"
+
+CITATION_1786 = (
+    '"España, Diócesis de Albacete, registros parroquiales, 1504-1979", '
+    "<i>FamilySearch</i> (https://www.familysearch.org/ark:/61903/1:1:NSB1-J6P : "
+    "Sat Aug 31 07:56:01 UTC 2024), Entry for Antonio Baliente and Juan "
+    "Baliente, 22 Apr 1786."
+)
 
 BAPTISM_1786 = {
     "id": "SD-1786",
-    "about": ARK,
+    "about": FATHER_ENTRY,
     "titles": [
         {"value": 'Antonio Baliente, "España, Diócesis de Albacete, registros parroquiales, 1504-1979"'}
     ],
-    "citations": [
-        {
-            "value": '"España, Diócesis de Albacete, registros parroquiales, 1504-1979", '
-            "FamilySearch (https://www.familysearch.org/ark:/61903/1:1:XVQ4-8QN : "
-            "Sat Aug 31 08:09:38 UTC 2024), Entry for Antonio Baliente and Juan "
-            "Baliente, 22 Apr 1786."
-        }
-    ],
+    "citations": [{"value": CITATION_1786}],
+    # FamilySearch really does send this, and it is the collection, not the
+    # record: nothing here may mistake it for the document's ARK.
+    "identifiers": {
+        "http://gedcomx.org/Collection": [
+            "https://www.familysearch.org/platform/records/collections/1431011"
+        ]
+    },
+    "links": {"description": {"href": "https://api.familysearch.org/platform/sources/descriptions/WDYR-2DY?flag=fsh"}},
+    "resourceType": "FSREADONLY",
 }
+
+ARK = FATHER_ENTRY
 
 FULL = {
     "sourceDescriptions": [
@@ -119,16 +137,45 @@ def test_reads_a_normal_response() -> None:
     check(second["about"] == ["defunció", "parella"], "both tags kept", str(second.get("about")))
 
 
-def test_shared_ark_is_findable() -> None:
+def test_the_document_is_not_the_persons_entry_in_it() -> None:
+    print("\nthe distinction this all rests on")
+    # Written against the spec, this code keyed documents by `about` -- and the
+    # live API then said the son G3CB-9ZT and the father LB8Z-YC4 shared exactly
+    # ZERO ARKs while sharing five documents, because `about` is per person.
+    # The rule was dead code and no offline fixture had noticed.
+    cite = _citations(FULL)[0]
+    check(cite["url"] == FATHER_ENTRY, "url is this person's entry", cite.get("url", ""))
+    check(cite["document"] == DOCUMENT, "document is the record itself", cite.get("document", ""))
+    check(cite["url"] != cite["document"], "and they are not the same string")
+    check(citation_key(cite) == DOCUMENT, "the key is the document", citation_key(cite))
+
+
+def test_shared_document_is_findable_though_the_entries_differ() -> None:
     print("\nthe signal the proposals actually use")
-    # The 1786 baptism hangs on the son and on the father alike. Two people
-    # holding one ARK is FamilySearch saying one document covers them both --
-    # which is what makes a proposal like #70's worth trusting.
-    son = _citations({"sourceDescriptions": [BAPTISM_1786], "persons": [
-        {"id": "G3CB-9ZT", "sources": [{"description": "#SD-1786"}]}]})
+    # The 1786 baptism hangs on the son and on the father alike, each under his
+    # own entry ARK. Keyed by the document, they meet; keyed by `about`, never.
+    son = _citations({
+        "sourceDescriptions": [dict(BAPTISM_1786, about=SON_ENTRY)],
+        "persons": [{"id": "G3CB-9ZT", "sources": [{"description": "#SD-1786"}]}],
+    })
     father = _citations(FULL)
-    shared = {c["url"] for c in son} & {c["url"] for c in father}
-    check(shared == {ARK}, "the baptism is common to both", str(shared))
+    check(
+        {c["url"] for c in son}.isdisjoint({c["url"] for c in father}),
+        "the two entry ARKs have nothing in common -- the old key found nothing",
+    )
+    shared = {citation_key(c) for c in son} & {citation_key(c) for c in father}
+    check(shared == {DOCUMENT}, "keyed by the document, the baptism is common", str(shared))
+
+
+def test_the_collection_url_is_never_taken_for_the_document() -> None:
+    print("\nidentifiers carry the collection, not the record")
+    cite = _citations(FULL)[0]
+    check("collections/1431011" not in citation_key(cite), "collection kept out of the key")
+    check(
+        "collections/1431011" not in cite.get("url", ""),
+        "and out of the url",
+        cite.get("url", ""),
+    )
 
 
 def test_survives_every_degraded_shape() -> None:
@@ -205,7 +252,9 @@ def test_odd_citation_wordings() -> None:
 
 def main() -> int:
     test_reads_a_normal_response()
-    test_shared_ark_is_findable()
+    test_the_document_is_not_the_persons_entry_in_it()
+    test_shared_document_is_findable_though_the_entries_differ()
+    test_the_collection_url_is_never_taken_for_the_document()
     test_survives_every_degraded_shape()
     test_finds_the_ark_wherever_it_is()
     test_odd_citation_wordings()

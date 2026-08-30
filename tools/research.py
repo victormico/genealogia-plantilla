@@ -36,7 +36,7 @@ from .frontier import (
     index_documents,
     snapshot_load,
 )
-from .fs.api import Api
+from .fs.api import Api, citation_key
 from .fs.fetch import LiveTree
 from .fs.session import add_common_args, build_session
 from .normalize import place_key
@@ -99,7 +99,7 @@ def pick_citations(cites: list[dict], shared: set[str], limit: int = CITATIONS_S
     ones that decide anything.
     """
     marked = [
-        {**c, "shared_with_target": True} if c.get("url") in shared else c
+        {**c, "shared_with_target": True} if citation_key(c) in shared else c
         for c in cites
     ]
     marked.sort(key=lambda c: not c.get("shared_with_target"))
@@ -123,10 +123,11 @@ def corroborating_documents(
     """
     if api is None or not target_pid:
         return {}, {}
-    target_urls = {c["url"] for c in api.citations(target_pid) if c.get("url")}
+    # Keyed by the document, not by the person's entry in it -- see citation_key.
+    on_target = {citation_key(c) for c in api.citations(target_pid)} - {""}
     cites = {q.xref: api.citations(q.xref) for q in parents}
     shared = {
-        pid: {c["url"] for c in found if c.get("url") in target_urls}
+        pid: {k for c in found if (k := citation_key(c)) in on_target}
         for pid, found in cites.items()
     }
     return cites, shared
