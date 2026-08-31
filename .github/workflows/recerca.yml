@@ -6,9 +6,12 @@
 # workflow -- i s'obre com a PR perquè les propostes esperen la teva decisió
 # (accept: true/false/null) igual que si les haguessis generat en local.
 #
-# Credencials: FAMILY_SEARCH_USERNAME i FAMILY_SEARCH_PASSWORD com a repository
-# secrets (Settings > Secrets and variables > Actions). Sense elles el pas de
-# sessió falla d'entrada amb un missatge clar, abans de gastar cap petició.
+# Què li fa falta: FAMILY_SEARCH_USERNAME i FAMILY_SEARCH_PASSWORD com a
+# repository secrets (Settings > Secrets and variables > Actions), i
+# `familysearch: arrel:` al config.yaml. Si encara no hi és tot, la feina
+# «configuracio» d'avall ho diu i atura la resta abans de gastar cap petició:
+# calla si és el cron d'un repositori que ningú no ha acabat de configurar, i
+# falla si el que hi ha és una configuració a mitges.
 #
 # L'arrel de qui baixar l'ascendència ve del `config.yaml` («familysearch:
 # arrel:»); el camp «root» de sota només fa falta per fer una prova puntual
@@ -46,7 +49,106 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Abans de res, mirar si aquest repositori té la recerca muntada.
+  #
+  # La plantilla -- i qualsevol còpia acabada de fer-ne -- du el cron posat
+  # però encara no du ni `familysearch: arrel:` al config.yaml ni els secrets
+  # de FamilySearch, i això era una feina fallida cada matí: les cinc
+  # execucions programades de genealogia-plantilla, del 17 al 31 d'agost de
+  # 2026, van fallar totes al mateix `tools.fs.session --whoami`, amb «no
+  # credentials». Res no s'havia espatllat: ningú no ho havia configurat
+  # encara. I un correu diari que sempre diu el mateix acaba per no llegir-se
+  # justament el dia que en diu una altra.
+  #
+  # La distinció que fa la diferència, i per què això no és «si no hi ha
+  # secrets, calla»:
+  #
+  #   * `arrel` en blanc = la recerca no està muntada en aquest repositori.
+  #     El cron calla i la feina de sota es marca com a saltada. El botó
+  #     (`workflow_dispatch`) no calla: qui l'ha premut ho ha fet a posta i
+  #     mereix saber què li falta.
+  #   * `arrel` posada i secrets no = configuració a mitges, i això sí que és
+  #     una avaria. Falla sempre, també des del cron, com fins ara.
+  configuracio:
+    runs-on: ubuntu-latest
+    outputs:
+      muntada: ${{ steps.mira.outputs.muntada }}
+    env:
+      FAMILY_SEARCH_USERNAME: ${{ secrets.FAMILY_SEARCH_USERNAME }}
+      FAMILY_SEARCH_PASSWORD: ${{ secrets.FAMILY_SEARCH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Mirar si hi ha arrel i credencials
+        id: mira
+        run: |
+          set -euo pipefail
+
+          usuari="${FAMILY_SEARCH_USERNAME:-}"
+          clau="${FAMILY_SEARCH_PASSWORD:-}"
+
+          # PyYAML i prou: llegir `familysearch: arrel:` amb grep se sembla a
+          # funcionar fins que algú comenta la línia o li posa cometes.
+          pip install --quiet --disable-pip-version-check 'PyYAML>=6.0'
+          arrel="$(python - <<'PY'
+          import pathlib
+
+          import yaml
+
+          dades = yaml.safe_load(pathlib.Path("config.yaml").read_text(encoding="utf-8")) or {}
+          print(str((dades.get("familysearch") or {}).get("arrel") or "").strip())
+          PY
+          )"
+
+          if [ -n "$arrel" ] && [ -n "$usuari" ] && [ -n "$clau" ]; then
+            echo "muntada=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "muntada=false" >> "$GITHUB_OUTPUT"
+
+          {
+            if [ -z "$arrel" ]; then
+              echo "## La recerca de FamilySearch encara no està configurada"
+            else
+              echo "## La recerca de FamilySearch està configurada a mitges"
+            fi
+            echo
+            echo "Hi falta:"
+            echo
+            if [ -z "$arrel" ]; then
+              echo "- \`familysearch: arrel:\` al \`config.yaml\`, amb el PID (forma \`XXXX-XXX\`) de la persona per qui vols arrencar l'arbre."
+            fi
+            if [ -z "$usuari" ]; then
+              echo "- el secret \`FAMILY_SEARCH_USERNAME\` (Settings > Secrets and variables > Actions)."
+            fi
+            if [ -z "$clau" ]; then
+              echo "- el secret \`FAMILY_SEARCH_PASSWORD\`, al mateix lloc."
+            fi
+            echo
+            if [ -z "$arrel" ]; then
+              echo "Mentre l'arrel no hi siga, la recerca programada no fa res, i això no és cap avaria."
+            else
+              echo "L'arrel hi és i els secrets no, o siga que això sí que és una avaria: per això aquesta feina falla."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$arrel" ]; then
+            echo "::error::hi ha «familysearch: arrel:» al config.yaml però falten els secrets FAMILY_SEARCH_*: la recerca està configurada a mitges"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "::error::la recerca no està configurada en aquest repositori; el resum de la feina diu què hi falta"
+            exit 1
+          fi
+          echo "::notice::la recerca no està configurada en aquest repositori: el cron no fa res"
+
   recerca:
+    needs: configuracio
+    if: needs.configuracio.outputs.muntada == 'true'
     runs-on: ubuntu-latest
     env:
       FAMILY_SEARCH_USERNAME: ${{ secrets.FAMILY_SEARCH_USERNAME }}
