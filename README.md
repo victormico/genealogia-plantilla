@@ -171,6 +171,12 @@ totes dues coses —l'`arrel` i els secrets— el cron no fa res** i s'atura al
 primer pas dient què hi falta, que és per què aquesta plantilla no t'omple la
 safata de feines fallides abans que hi hagis posat el teu arbre.
 
+Quan sí que corre, no toca mai `main`: obre una PR amb els informes refets i el
+`candidates-<data>.yaml` nou, i les propostes hi esperen la mateixa decisió
+(`accept: true/false/null`) que si les haguessis generat a casa. I si la d'ahir
+encara és oberta perquè no l'has decidida, **hi afegeix en lloc d'obrir-ne una
+altra**: així no acabes amb una pila de PR que proposen tres vegades el mateix.
+
 ## El cicle de treball
 
 ### Baixar l'arbre de FamilySearch

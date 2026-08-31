@@ -12,19 +12,19 @@
 # «configuracio» d'avall ho diu i atura la resta abans de gastar cap petició:
 # calla si és el cron d'un repositori que ningú no ha acabat de configurar, i
 # falla si el que hi ha és una configuració a mitges.
-#
-# L'arrel de qui baixar l'ascendència ve del `config.yaml` («familysearch:
-# arrel:»); el camp «root» de sota només fa falta per fer una prova puntual
-# amb una altra persona.
 
 name: Recerca FamilySearch
 
 on:
   schedule:
-    - cron: '0 6 * * *' # cada dia 06:00 UTC
+    - cron: '17 6 * * *' # cada dia ~06:17 UTC; evita el minut 0, el de més càrrega a GitHub Actions
   workflow_dispatch:
     inputs:
       root:
+        # En blanc a posta: qui és l'arrel ho diu `familysearch: arrel:` del
+        # config.yaml, i posar-lo també ací com a valor per defecte tornava a
+        # fer que visquera a dos llocs. Ompli'l només per a una prova puntual
+        # arrencant per una altra persona.
         description: "Xref arrel de FamilySearch (buit = el del config.yaml)"
         default: ''
       top:
@@ -157,6 +157,58 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Continuar una PR de recerca oberta, si n'hi ha
+        # Sense això, cada disparo obria una PR nova amb els mateixos
+        # candidats que l'oberta d'ahir encara sense decidir -- el 28 i el 29
+        # d'agost de 2026 en van eixir dues amb les tres mateixes propostes.
+        # Ara, si ja n'hi ha una oberta d'una execució anterior, hi seguim
+        # afegint en lloc de crear-ne una altra.
+        id: pr
+        run: |
+          set -euo pipefail
+          branch=""
+          pr_number=""
+          existing="$(gh pr list --state open --base main --json number,headRefName,createdAt --limit 50 \
+            --jq '[.[] | select(.headRefName | startswith("fs-recerca-"))] | sort_by(.createdAt) | reverse | .[0] // empty')"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -n "$existing" ]; then
+            pr_number="$(jq -r '.number' <<< "$existing")"
+            branch="$(jq -r '.headRefName' <<< "$existing")"
+            echo "PR #$pr_number oberta a $branch: hi continuo en lloc d'obrir-ne una altra"
+            git fetch origin "$branch"
+            git checkout -B "$branch" "origin/$branch"
+
+            # Main pot haver avançat (el workflow Informes recalcula reports/ a
+            # cada merge): l'incorporem ara, no en acabar, perquè els passos
+            # d'avall regeneraran tots els informes de totes maneres -- el
+            # conflicte no s'ha d'arrossegar sense resoldre fins que algú faça
+            # `gh pr merge`.
+            if ! git merge origin/main --no-edit -m "Incorpora main abans de continuar la recerca"; then
+              conflicted="$(git diff --name-only --diff-filter=U)"
+              outside="$(grep -vE '^reports/(frontier|worklist|match-report|estat)\.md$|^reports/frontier-fs\.json$' <<< "$conflicted" || true)"
+              if [ -n "$outside" ]; then
+                echo "conflicte de merge fora dels informes generats, cal resoldre'l a mà:" >&2
+                echo "$outside" >&2
+                exit 1
+              fi
+              # Són tots fitxers que els passos d'avall reescriuen sencers de
+              # totes maneres; quin costat es queda ara no importa.
+              xargs -r git checkout --theirs -- <<< "$conflicted"
+              xargs -r git add <<< "$conflicted"
+              git commit --no-edit
+            fi
+          else
+            echo "cap PR de recerca oberta: branca nova"
+            branch="fs-recerca-$(date +%Y-%m-%d)-${GITHUB_RUN_NUMBER}"
+            git checkout -b "$branch"
+          fi
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
@@ -168,7 +220,10 @@ jobs:
         run: python -m tools.fs.session --whoami
 
       - name: Baixar el pedigrí
-        # Els valors que escriu qui llança el workflow van per `env:` i no
+        # Sense `--root`, `tools.fs.fetch` agafa `familysearch: arrel:` del
+        # config.yaml, que és l'únic lloc on ha de viure qui és l'arrel.
+        #
+        # I els valors que escriu qui llança el workflow van per `env:`, mai
         # interpolats dins del `run:`. Un `${{ inputs.x }}` s'expandeix com a
         # TEXT abans que bash llegisca res, o siga que un valor com
         # `x"; curl … | sh; #` deixa de ser un argument i passa a ser una ordre
@@ -178,7 +233,7 @@ jobs:
           ROOT: ${{ inputs.root }}
         run: |
           set -euo pipefail
-          if [ -n "$ROOT" ]; then
+          if [ -n "${ROOT:-}" ]; then
             python -m tools.fs.fetch --root "$ROOT"
           else
             python -m tools.fs.fetch
@@ -255,7 +310,10 @@ jobs:
           python -m tools.frontier
           python -m tools.worklist
 
-      - name: Obrir una PR si hi ha res de nou
+      - name: Pujar els canvis, i obrir una PR si encara no n'hi havia
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
         run: |
           set -euo pipefail
 
@@ -265,14 +323,10 @@ jobs:
           fi
 
           data="$(date +%Y-%m-%d)"
-          branch="fs-recerca-${data}-${GITHUB_RUN_NUMBER}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
           git add reports/
           git commit -m "Recerca automàtica de FamilySearch, ${data}"
-          git push origin "$branch"
+          git push origin "HEAD:$BRANCH"
 
           {
             echo "## Propostes noves"
@@ -282,8 +336,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          gh pr create \
-            --title "Recerca FamilySearch, ${data}" \
-            --body "Informes refets i propostes noves a \`reports/candidates-${data}.yaml\`. Revisa-les amb \`reports/frontier.md\` al costat abans de decidir \`accept\`." \
-            --head "$branch" \
-            --base main
+          if [ -n "${PR_NUMBER:-}" ]; then
+            echo "Afegit a la PR #$PR_NUMBER existent." >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create \
+              --title "Recerca FamilySearch, ${data}" \
+              --body "Informes refets i propostes noves a \`reports/candidates-${data}.yaml\`. Revisa-les amb \`reports/frontier.md\` al costat abans de decidir \`accept\`." \
+              --head "$BRANCH" \
+              --base main
+          fi
