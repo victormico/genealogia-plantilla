@@ -156,6 +156,16 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Tota la història, no la clonada superficial de per defecte. El pas
+          # d'ací sota fusiona `origin/main` dins de la branca de la PR, i amb
+          # `fetch-depth: 1` els dos caps no comparteixen cap avantpassat en
+          # local: git no els veu emparentats i contesta «refusing to merge
+          # unrelated histories», que és el que va tombar l'execució 15 del 31
+          # d'agost de 2026, la primera vegada que aquest camí es va exercir de
+          # veritat (fins llavors no hi havia hagut mai cap PR oberta a
+          # continuar).
+          fetch-depth: 0
 
       - name: Continuar una PR de recerca oberta, si n'hi ha
         # Sense això, cada disparo obria una PR nova amb els mateixos
@@ -188,6 +198,17 @@ jobs:
             # `gh pr merge`.
             if ! git merge origin/main --no-edit -m "Incorpora main abans de continuar la recerca"; then
               conflicted="$(git diff --name-only --diff-filter=U)"
+              # Un merge que falla sense deixar cap fitxer en conflicte no és
+              # un conflicte de contingut: és git que no ha arribat a
+              # començar. Sense aquesta comprovació, la resolució d'ací sota
+              # no feia res, el `git commit` es queixava de no tenir res a
+              # cometre i el que es llegia al registre era «nothing to
+              # commit», no el motiu de veritat, que estava sis línies més
+              # amunt.
+              if [ -z "$conflicted" ]; then
+                echo "el merge de main ha fallat sense deixar cap conflicte de contingut; el motiu és l'error de git d'ací dalt" >&2
+                exit 1
+              fi
               outside="$(grep -vE '^reports/(frontier|worklist|match-report|estat)\.md$|^reports/frontier-fs\.json$' <<< "$conflicted" || true)"
               if [ -n "$outside" ]; then
                 echo "conflicte de merge fora dels informes generats, cal resoldre'l a mà:" >&2
