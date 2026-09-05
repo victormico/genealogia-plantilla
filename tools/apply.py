@@ -18,6 +18,7 @@ import argparse
 import json
 import shutil
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from difflib import unified_diff
 from pathlib import Path
@@ -199,7 +200,31 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
     sources_made: dict[str, str] = {}
     # PID -> xref, for people created during this run.
     created: dict[str, str] = {}
+    # The families each record already names. Read off the file for what is
+    # there, kept up to date for what we write, because a record appended this
+    # run cannot be read back out of the file to be asked.
+    fams_of: dict[str, list[str]] = {p.xref: list(p.fams) for p in people.values()}
     added_records = 0
+
+    def link_spouse(xref: str, fams: list[str]) -> None:
+        """Give a record the FAMS matching a family that names it as a spouse.
+
+        A FAM record is only half a marriage: HUSB/WIFE there and no FAMS here
+        leaves the two disagreeing about who is married to whom. Only people we
+        *create* were given their FAMS, so every reuse opened one of these
+        half-links -- @I00074@ named @F00027@ while @F00309@ named her, and it
+        took Ancestris' next save to make that visible.
+        """
+        known = fams_of.setdefault(xref, [])
+        missing = [fam for fam in fams if fam not in known]
+        if not missing:
+            return
+        splicer.add_lines(
+            xref,
+            [f"1 FAMS @{fam}@" for fam in missing],
+            why=f"link @{xref}@ back to " + ", ".join(f"@{fam}@" for fam in missing),
+        )
+        known.extend(missing)
 
     def ensure_person(block: dict, fams: list[str]) -> str | None:
         """Create an INDI for this proposal block, or reuse an existing record."""
@@ -207,12 +232,28 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
         pid = block.get("fsftid")
         if pid and pid in by_pid:
             existing = by_pid[pid]
+            had = list(fams_of.get(existing.xref, ()))
+            link_spouse(existing.xref, fams)
             notes.append(
                 f"reusing @{existing.xref}@ for {block.get('given','?')} "
                 f"{block.get('surname','?')} (already in the tree as {pid})"
             )
+            # Reuse is the point in a village where two branches reach the same
+            # couple, so this warns and does not refuse. But someone who already
+            # had a family and is now handed another is the shape a wrong
+            # _FSFTID takes, and it is the only thing standing between a
+            # six-point name match and two people sharing one record.
+            if had:
+                notes.append(
+                    f"CHECK @{existing.xref}@ {existing.label()} already had "
+                    + ", ".join(f"@{fam}@" for fam in had)
+                    + f"; {pid} now adds "
+                    + ", ".join(f"@{fam}@" for fam in fams)
+                    + ". Same person twice, or one record for two?"
+                )
             return existing.xref
         if pid and pid in created:
+            link_spouse(created[pid], fams)
             return created[pid]
         # The tree source says where the person came from; the citations say
         # what the claim rests on. Both hang on the record, in that order.
@@ -245,6 +286,7 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
             why=f"new person @{xref}@ {block.get('given','')} {block.get('surname','')}",
         )
         added_records += 1
+        fams_of[xref] = list(fams)
         if pid:
             created[pid] = xref
         return xref
@@ -329,6 +371,7 @@ def apply_parents(splicer: Splicer, ged: GedcomFile, entries: list[dict]) -> tup
                 entry,
                 by_pid,
                 created,
+                link_spouse,
                 places,
                 source_xref,
                 today,
@@ -352,6 +395,7 @@ def _import_branch(
     entry: dict,
     by_pid: dict,
     created: dict[str, str],
+    link_spouse: Callable[[str, list[str]], None],
     places: PlaceBook,
     source_xref: str,
     today: str,
@@ -375,11 +419,15 @@ def _import_branch(
             slots: dict[str, str | None] = {"M": None, "F": None}
             for parent in parents:
                 ppid = parent.xref
+                # Reused either way, and a reused record has to be told
+                # about the family it is about to appear in -- see link_spouse.
                 if ppid in by_pid:
                     slots[parent.sex or "M"] = by_pid[ppid].xref
+                    link_spouse(by_pid[ppid].xref, [fam_xref])
                     continue
                 if ppid in created:
                     slots[parent.sex or "M"] = created[ppid]
+                    link_spouse(created[ppid], [fam_xref])
                     continue
                 xref = splicer.reserve_xref("I")
                 splicer.append_record(

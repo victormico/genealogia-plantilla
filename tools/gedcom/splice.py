@@ -5,7 +5,9 @@ Two operations only, both additive:
   * `append_record`  -- a new `0 @Innn@ INDI` / `FAM` / `SOUR` block, inserted
     immediately before `0 TRLR`.
   * `insert_into`    -- extra subordinate lines inside an existing record,
-    placed before its `1 CHAN` line (Ancestris keeps CHAN last).
+    placed before its `1 CHAN` line (Ancestris keeps CHAN last). `add_lines`
+    is the same thing for a record that may instead have been appended
+    earlier in this same run.
 
 Nothing is ever deleted or rewritten. Every untouched line keeps its exact
 bytes, so `git diff` on the result shows only the intended additions — which is
@@ -61,6 +63,36 @@ class Splicer:
         chan = self.ged.sub(xref, "CHAN")
         at = chan[0].index if chan else rec.end
         self._insertions.append(_Insertion(at, list(lines), why))
+
+    def add_lines(self, xref: str, lines: list[str], why: str = "") -> None:
+        """`insert_into`, but a record queued this run counts as existing too.
+
+        `insert_into` can only reach what the file already has. A record
+        appended earlier in the same run is not in `by_xref` yet, so asking for
+        it there raises -- and the caller's way around that was to write the
+        pointer on one side only. That is how a person could end up named by a
+        family that they did not name back.
+
+        Lines folded into a queued record are counted under that record's own
+        changelog entry, so `why` is only used when the record is already on
+        disk. Nothing is lost from the diff -- only from the running commentary.
+        """
+        if xref in self.ged.by_xref:
+            self.insert_into(xref, lines, why)
+            return
+        head = f"0 @{xref}@ "
+        for ins in self._insertions:
+            if ins.lines and ins.lines[0].startswith(head):
+                # Before its CHAN, same as insert_into: Ancestris keeps CHAN last.
+                at = next(
+                    (n for n, line in enumerate(ins.lines) if line == "1 CHAN"),
+                    len(ins.lines),
+                )
+                ins.lines[at:at] = list(lines)
+                return
+        raise KeyError(
+            f"no record @{xref}@ in {self.ged.path.name}, nor queued this run"
+        )
 
     # -- application ------------------------------------------------------
 
