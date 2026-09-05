@@ -47,6 +47,7 @@ jobs:
           python -m tools.tests.test_research
           python -m tools.tests.test_archive
           python -m tools.tests.test_apply_citations
+          python -m tools.tests.test_apply_reuse
 
       - name: Comprovacions
         run: |
