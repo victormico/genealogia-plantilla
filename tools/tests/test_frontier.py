@@ -26,6 +26,9 @@ from tools.frontier import (
     SNAPSHOT,
     FrontierEntry,
     build,
+    documents_for,
+    index_documents,
+    rank,
     snapshot_load,
     snapshot_write,
     write_report,
@@ -175,6 +178,81 @@ def test_write_report_is_deterministic(canon: Tree) -> None:
     check("Sense comprovar" in first, "la secció «Sense comprovar» hi és")
 
 
+def _woman(given: str, surname: str, birth_date: str, birth_place: str) -> Person:
+    return Person(
+        xref="I09999", name=f"{given} /{surname}/", given=given, surname=surname,
+        sex="F", birth_date=birth_date, birth_place=birth_place,
+        death_date=None, death_place=None, fsftid=None, famc=None,
+    )
+
+
+# The document from the incident of 05-09-2026, path and all: a marriage of
+# 1863 at Fontanars dels Alforins (València), whose filename happens to carry
+# both «Maria» and «Garcia».
+_MARRIAGE_1863 = (
+    "Fonts/Arxiu Parroquial València/"
+    "Josep_Biosca_Pascual_amb_Maria_Teresa_Garcia_Matrimoni_1863.md"
+)
+
+
+def test_a_name_match_across_a_century_is_not_a_document() -> None:
+    print("\nel casador no pot confirmar amb un document de 128 anys després")
+    docs = index_documents([ROOT / _MARRIAGE_1863])
+
+    # The real proposal: María García, born 1735 at Jorquera (Albacete). One of
+    # the commonest surnames in Spain is the only thing the two share, and
+    # `frontier.md` printed it as «Confirmat per un document nostre».
+    jorquera = _woman("MARÍA", "GARCÍA", "29 MAR 1735", "Jorquera, Albacete, Espanya")
+    check(not documents_for(jorquera, docs, {}),
+          "128 anys i dues províncies de distància no confirmen res")
+
+    # Each guard on its own, so a change to one is visible: same province,
+    # wrong century...
+    early = _woman("MARIA", "GARCIA", "1735", "Fontanars dels Alforins, València")
+    check(not documents_for(early, docs, {}), "la data sola ja ho descarta")
+
+    # ...and, for a baptism, the same century in the wrong province. A baptism
+    # is the one sacrament tied to where somebody was born.
+    baptism = index_documents([
+        ROOT / "Fonts/Arxiu Parroquial València/Maria_Garcia_Bateig_1840.md"
+    ])
+    elsewhere = _woman("MARÍA", "GARCÍA", "1840", "Jorquera, Albacete, Espanya")
+    check(not documents_for(elsewhere, baptism, {}),
+          "una parròquia de València no bateja qui va néixer a Albacete")
+
+    # The marriage, though, stays: people move, and this tree has a branch from
+    # Albacete precisely because somebody married into València. Dropping every
+    # document from another province would lose every migrant's records.
+    check(documents_for(elsewhere, docs, {}) == [_MARRIAGE_1863],
+          "un matrimoni a l'altra província no és cap contradicció")
+
+    # And the guess still works where it should: nothing above is a reason to
+    # stop matching documents that could be about the person.
+    hers = _woman("MARIA", "GARCIA", "1840", "Fontanars dels Alforins, València")
+    check(documents_for(hers, docs, {}) == [_MARRIAGE_1863],
+          "una coincidència plausible es manté")
+
+
+def test_a_declaration_is_never_second_guessed() -> None:
+    print("\nel que un document declara mana sobre qualsevol comprovació d'ací")
+    docs = index_documents([ROOT / _MARRIAGE_1863])
+    jorquera = _woman("MARÍA", "GARCÍA", "29 MAR 1735", "Jorquera, Albacete, Espanya")
+    declared = {jorquera.xref: [_MARRIAGE_1863]}
+    check(documents_for(jorquera, docs, declared) == [_MARRIAGE_1863],
+          "si el document diu de qui parla, s'hi creu")
+
+
+def test_a_guess_is_worth_less_than_a_declaration(canon: Tree) -> None:
+    print("\nun document que només coincideix de nom puntua menys")
+    person = next(iter(canon.people.values()))
+    sure = FrontierEntry(person=person, status="stuck", documents=[_MARRIAGE_1863])
+    guess = FrontierEntry(person=person, status="stuck", documents=[_MARRIAGE_1863],
+                          guessed={_MARRIAGE_1863})
+    check(rank(sure) > rank(guess),
+          "una declaració ha de pesar més que una coincidència de noms",
+          f"{rank(sure)} vs {rank(guess)}")
+
+
 def test_check_informes(canon: Tree) -> None:
     print("\nel guardià a tools.lint --informes")
     estat = Estat(CANONICAL)
@@ -230,6 +308,9 @@ def main() -> int:
     test_mismatched_fsftid_is_ignored(canon)
     test_parented_person_leaves_the_report(canon)
     test_write_report_is_deterministic(canon)
+    test_a_name_match_across_a_century_is_not_a_document()
+    test_a_declaration_is_never_second_guessed()
+    test_a_guess_is_worth_less_than_a_declaration(canon)
     test_check_informes(canon)
 
     print()

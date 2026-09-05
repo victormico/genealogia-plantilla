@@ -186,7 +186,14 @@ def write_report(
             else:
                 lines.append("- Encara no s'ha trobat a FamilySearch")
             for doc in entry.documents:
-                lines.append(f"- Document que ja tenim: `{doc}`")
+                # Two sentences, because they are two claims: a document that
+                # declares who it is about, and a filename that happens to carry
+                # the same names. See `frontier.guess_is_plausible`.
+                lines.append(
+                    f"- Document que **podria** ser-ne (coincidència de noms): `{doc}`"
+                    if doc in entry.guessed
+                    else f"- Document que ja tenim: `{doc}`"
+                )
             for label, url in search_links(entry):
                 lines.append(f"- [{label}]({url})")
             lines.append("")

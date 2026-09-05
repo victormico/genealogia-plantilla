@@ -117,9 +117,11 @@ class Challenged(RuntimeError):
 class Quota:
     """A daily counter that lives on disk, so it cannot be lost by restarting."""
 
-    def __init__(self, path: Path = QUOTA_FILE, limit: int = SOFT_DAILY,
+    def __init__(self, path: Path | None = None, limit: int = SOFT_DAILY,
                  hard: bool = False):
-        self.path = path
+        # Resolved here rather than bound as a default argument, so a test can
+        # point `QUOTA_FILE` somewhere temporary and not write the real log.
+        self.path = path or QUOTA_FILE
         self.limit = limit
         # `hard` is only ever true for a ceiling the archive itself declared,
         # either on a page we read now or on one we read earlier today.
@@ -176,9 +178,26 @@ class Quota:
             f"Continuo."
         )
 
-    def spend(self, what: str) -> None:
+    def spend(self, what: str, search: dict | None = None) -> None:
+        """Count one query and write it down.
+
+        `what` is prose for a human to read. `search` is the same query as
+        **terms**, and it is the half that a program can compare tomorrow:
+        `tools.apv.verify.asked_before` reads exactly this key and skips every
+        entry that lacks it, because prose describing a search is not the
+        search. Without it a lookup that came back empty leaves no trace at all
+        -- no transcription in `Fonts/`, no structured entry here -- and the
+        plan proposes it again the next day.
+
+        So an omitted `search` is not a small loss of detail: it is the
+        difference between a zero that is recorded and a zero that is paid for
+        twice. Only `--record`, which takes free prose, is entitled to omit it.
+        """
         self._state["used"] = self.used + 1
-        self._state.setdefault("log", []).append({"what": what, "at": time.strftime("%H:%M:%S")})
+        entry = {"what": what, "at": time.strftime("%H:%M:%S")}
+        if search:
+            entry["search"] = search
+        self._state.setdefault("log", []).append(entry)
         self._save()
 
     def reconcile(self, html: str) -> int | None:

@@ -40,6 +40,10 @@ from ..config import tree_path
 from ..people import Tree
 from . import coverage
 from . import query
+# The module, not just the names below: `asked_before` has to read the same
+# `QUOTA_FILE` the session writes even when that is repointed. `session` alone
+# would shadow the local of the same name in `main`.
+from . import session as session_module
 from .query import Lookup, SELECTIVE, url
 from .session import Challenged, QuotaExhausted, add_common_args, build_session
 
@@ -120,7 +124,22 @@ _NOT_DOCUMENTED = re.compile(r"apv:no-documenta([^\-]*)")
 
 
 def plan(tree: Tree) -> list[Lookup]:
-    """One ranked lookup per undocumented ancestor, lowest Sosa first."""
+    """One ranked lookup per undocumented ancestor, lowest Sosa first.
+
+    **No lookup built here carries a given name, and that is deliberate while
+    the match criterion is `P`.** Two reasons, and either alone is enough:
+
+      * the index writes names its own way -- Valencian, and the whole compound
+        name -- so «Vicent Manuel Revert» is not found by `nom=manuel` under a
+        starts-with match, and the zero reads as a hole in the books;
+      * the archive's own LLEGIU-ME has said since 28-07-2026 that a name spelt
+        our way and not theirs returns zero and spends the query anyway.
+
+    Dropping it costs almost nothing: surname, parish and a year window already
+    cut the result sets down to something readable, and reading two extra fiches
+    is cheaper than a query that answers nothing. If a given name ever does go
+    in, it needs `match=query.CONTAINS` with it -- see `tools/apv/query.py`.
+    """
     out: list[Lookup] = []
 
     for depth, (sosa, person) in enumerate(undocumented_ancestors(tree)):
@@ -423,6 +442,10 @@ def fingerprint(lookup: Lookup) -> dict:
     a1, spouse = _fold(terms.get("a1", "")), _fold(terms.get("cognomcj", ""))
     return {
         "sacrament": _fold(lookup.sacrament),
+        # How the terms were matched, because it decides what a zero means. See
+        # `_covers` for the one asymmetry: «conté» answers «comença per», and
+        # not the other way round.
+        "match": lookup.match,
         "parish": _fold(lookup.parish),
         # Only a two-sided search has a couple. A baptism must leave this empty
         # so the comparison falls through to a1 + a2 -- with one name in here it
@@ -459,7 +482,10 @@ def asked_before(path: Path | None = None) -> list[dict]:
     free prose and prose cannot be matched safely. Use `--asked N` to record a
     browser search against a numbered plan item, which stores the terms.
     """
-    quota_file = path or (ROOT / "cache" / "apv-quota.json")
+    # Read off the session module rather than rebuilt here, so that the log this
+    # reads is always the log `Quota` writes -- including when a test points it
+    # somewhere temporary.
+    quota_file = path or session_module.QUOTA_FILE
     if not quota_file.exists():
         return []
     try:
@@ -467,6 +493,26 @@ def asked_before(path: Path | None = None) -> list[dict]:
     except (ValueError, OSError):
         return []
     return [e["search"] for e in (state.get("log") or []) if e.get("search")]
+
+
+def _covers(mine: dict, past: dict) -> bool:
+    """Does the past search's criterion answer the one being planned?
+
+    Same criterion, obviously. And a past **«conté»** answers a planned
+    «comença per» with the same terms, because everything the narrow search
+    would have found the wide one found too.
+
+    The reverse does not hold, and that is the whole reason this is a comparison
+    and not an equality: a zero under `P` is not evidence about `C`. Reading it
+    as one is how «no baptism for Manuel» came out of an index that has five, in
+    the incident of 05-09-2026 -- and once a search is in this log it is not
+    asked again, so the wrong answer would be kept for good.
+
+    Entries written before the criterion was recorded have no `match`, and are
+    read as `P`: that is what every search this tool built back then was.
+    """
+    theirs = past.get("match") or query.STARTS_WITH
+    return theirs == mine.get("match") or theirs == query.CONTAINS
 
 
 def _overlap(a: dict, b: dict) -> bool:
@@ -489,6 +535,8 @@ def _matches_a_past_search(lookup: Lookup, searches: list[dict]) -> dict | None:
         if mine["sacrament"] != past.get("sacrament"):
             continue
         if mine["parish"] != past.get("parish"):
+            continue
+        if not _covers(mine, past):
             continue
         if not _overlap(mine, past):
             continue
@@ -772,6 +820,39 @@ def _second(surname: str) -> str:
     return parts[1] if len(parts) > 1 else ""
 
 
+def record_asked(session, lookups: list[Lookup], entries: list[str]) -> int:
+    """Write down browser searches, by their number in the plan. Returns how many.
+
+    This is `--asked`, and it is the only path that stores the **terms** of a
+    search. `--record` takes free prose, and `asked_before` skips prose rather
+    than guessing at it, so a search recorded that way still gets proposed
+    again tomorrow. Since Cloudflare's managed challenge means a bare script
+    gets a 403 and the browser is the only way to actually work, this is the
+    documented way to note what was asked -- and from 01-08-2026 to 05-09-2026
+    it raised `TypeError` on every invocation, because `Quota.spend` had no
+    `search` parameter to give it and no test came through here.
+
+    Kept out of `main` so a test can call it with a plan it built itself,
+    instead of one that depends on whatever the tree happens to hold.
+    """
+    written = 0
+    for entry in entries:
+        num, _, outcome = entry.partition(":")
+        try:
+            lookup = lookups[int(num.strip()) - 1]
+        except (ValueError, IndexError):
+            print(f"  no hi ha cap número {num.strip()!r} al pla d'ara; no s'apunta")
+            continue
+        session.quota.spend(
+            f"[navegador] {lookup.sacrament} {lookup.who} {lookup.parish} — "
+            f"{outcome.strip() or 'sense anotar'}",
+            search=fingerprint(lookup),
+        )
+        written += 1
+        print(f"apuntada la {num.strip()}: {lookup.who} — {outcome.strip()}")
+    return written
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     add_common_args(parser)
@@ -797,19 +878,7 @@ def main() -> int:
         # Resolving N needs the plan, so this runs before the report is written
         # and the report below is regenerated with these searches already out.
         current = [l for l in plan(Tree(args.gedcom or tree_path())) if l.possible]
-        for entry in args.asked:
-            num, _, outcome = entry.partition(":")
-            try:
-                lookup = current[int(num.strip()) - 1]
-            except (ValueError, IndexError):
-                print(f"  no hi ha cap número {num.strip()!r} al pla d'ara; no s'apunta")
-                continue
-            session.quota.spend(
-                f"[navegador] {lookup.sacrament} {lookup.who} {lookup.parish} — "
-                f"{outcome.strip() or 'sense anotar'}",
-                search=fingerprint(lookup),
-            )
-            print(f"apuntada la {num.strip()}: {lookup.who} — {outcome.strip()}")
+        record_asked(session, current, args.asked)
 
     if args.quota or ((getattr(args, "record", []) or args.asked) and not args.fetch):
         tree = Tree(args.gedcom or tree_path())

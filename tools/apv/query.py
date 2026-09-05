@@ -28,6 +28,46 @@ that harmless: `ferr` matches `Ferrà`, `cerda` matches `Cerdà`.
 
 If you want the accents back, pass `strip_accents=False` and check the hit count
 against a plain-ASCII run before believing a zero.
+
+-----------------------------------------------------------------------------
+THE MATCH CRITERION IS A CHOICE, AND THE DEFAULT IS THE NARROWEST OF THE THREE
+-----------------------------------------------------------------------------
+
+`filtre` used to be written once, to `P`, with no way to pass another value.
+Three radio buttons on the live form, with the archive's own examples:
+
+    P  «Coincideix principi»  Serra = Serra, Serrano…
+    F  «Coincideix final»     ana   = Susana, Juana…
+    C  «Conté»                toni  = Antonio, San Antonio…
+
+**The `C` example is the case that bit us.** This index records baptisms under
+the whole compound given name -- *Joan **Antoni** Soriano Sanz*, *Maria
+Francesca **Josepa** Antònia Dominga Vicenta Revert Torró* -- so with `P` a
+search for `nom=manuel` does not find «Vicent Manuel Revert», and the zero that
+comes back is indistinguishable from a gap in the books. On 05-09-2026 two such
+searches were taken for an answer; re-run **with no given name at all** the same
+search returned five baptisms of siblings and unblocked four ancestors.
+
+The gap is asymmetric, and saying so precisely is what stops good searches being
+thrown away:
+
+  * `nom=maria` **does** find «Maria Josepa Francés» -- it starts there. What
+    `P` loses is «Josepa Maria Francés».
+  * On **surnames** `P` costs nothing: the index ignores accents, so `torro`
+    finds «Torró». The trap is the given-name field alone.
+
+So `match=` (the form's `filtre`) is a parameter here, `P` stays the default so
+nothing that already works moves, and `tools.apv.verify.plan` sends **no given
+name at all** while that is so. Before writing down a zero from a search that
+did carry one, re-run it with `match=CONTAINS`: a zero is a datum kept for ever,
+and it is worth its being true.
+
+**The `_` wildcard is available and always was.** The form offers `_` for a
+letter you are unsure of, and `encode()` leaves it alone (it is unreserved in a
+URL), so `url(surname="ferr_ndis")` reaches the archive as typed. It is the
+direct way to handle an uncertain spelling -- one query instead of one per
+variant -- and it is not applied automatically anywhere: knowing which letter is
+in doubt is the caller's business, not this module's.
 """
 
 from __future__ import annotations
@@ -43,8 +83,17 @@ SELECTIVE = FORM  # kept for callers that used the old name
 # Sacrament codes, from the radio group on the live form.
 BAPTISM, CONFIRMATION, MARRIAGE, DEATH, PARISH_ROLL = "1", "2", "4", "5", "6"
 
-# How a text term is matched. P is the form's own default.
+# How a text term is matched. P is the form's own default, and the narrowest of
+# the three -- see the header for what that costs on the given-name field.
 STARTS_WITH, ENDS_WITH, CONTAINS = "P", "F", "C"
+
+# Labels as the form itself writes them, so an unknown code fails with a message
+# that says what the three are instead of reaching the archive as nonsense.
+MATCH_CRITERIA = {
+    STARTS_WITH: "coincideix principi",
+    ENDS_WITH: "coincideix final",
+    CONTAINS: "conté",
+}
 
 # Every field the live form posts, in its order. Read off the form itself.
 FIELDS = (
@@ -94,10 +143,85 @@ MEANING = {
 }
 
 
+# The given-name fields, which are the ones the two notes below apply to. The
+# surname fields are left alone by both: the index writes surnames as the family
+# wrote them, and accents aside they do not get translated.
+GIVEN_NAME_FIELDS = ("nom", "nompa", "nomma", "nomcon")
+
+# THE INDEX CATALANISES GIVEN NAMES AND MOST TREES DO NOT.
+#
+# Read off the live index on 05-09-2026: `nom=juan` over the Ontinyent baptisms
+# returns **zero** and `nom=joan` returns **four**. Every fiche is in Valencian
+# -- Antoni, Josep, Francesc, Feliu, Antònia, Miquel, Margarida -- while a
+# GEDCOM exported from anywhere else usually holds the Castilian form, because
+# that is how the civil registry wrote it.
+#
+# A zero from `nom=juan` is the same lie as a zero from a `P` match: an absence
+# of the tool reported as an absence of the archive. Worse, the two compound:
+# the Castilian form would not have matched even as a substring.
+#
+# Only the pairs that actually differ are listed, matched on the accent-stripped
+# lowercase form, and a name that is not here is passed through untouched. It is
+# a correspondence table, not a translator, and it is **deliberately short**:
+# every entry is a Castilian/Valencian pair that is not in doubt. Guessing at
+# the doubtful ones would manufacture the very thing it is here to prevent, a
+# query that cannot match. For a name it does not cover, the answers are
+# `match=CONTAINS` over the root of the name, or -- best of all -- no given name
+# at all, which is what `verify.plan` sends.
+CATALAN_GIVEN = {
+    "juan": "joan", "juana": "joana",
+    "jose": "josep", "josefa": "josepa",
+    "francisco": "francesc", "francisca": "francesca",
+    "vicente": "vicent",
+    "antonio": "antoni",
+    "miguel": "miquel",
+    "pedro": "pere",
+    "pablo": "pau",
+    "jaime": "jaume",
+    "jorge": "jordi",
+    "margarita": "margarida",
+    "catalina": "caterina",
+    "ana": "anna",
+    "felix": "feliu",
+    "andres": "andreu",
+    "bartolome": "bartomeu",
+    "esteban": "esteve",
+    "mateo": "mateu",
+    "marcos": "marc",
+    "luis": "lluis", "luisa": "lluisa",
+    "lorenzo": "llorenc",
+    "guillermo": "guillem",
+    "bernardo": "bernat",
+    "ignacio": "ignasi",
+    "jeronimo": "jeroni", "geronimo": "jeroni",
+    "sebastian": "sebastia",
+    "cristobal": "cristofol",
+    "bautista": "baptista",
+    "rafael": "rafel",
+    "blas": "blai",
+    "eugenio": "eugeni",
+    "gregorio": "gregori",
+}
+
+
 def ascii_safe(value: str) -> str:
     """Drop accents. See the note above on why this is the default."""
     decomposed = unicodedata.normalize("NFD", value or "")
     return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+
+
+def catalan_given(value: str) -> str:
+    """The given name as the index writes it. See `CATALAN_GIVEN`.
+
+    >>> catalan_given("Juan Bautista")
+    'joan baptista'
+
+    Word by word, because compound names mix the two languages freely and a
+    whole-string table would need every combination. Anything not in the table
+    comes back unchanged (accent-stripped and lowercased, as the URL wants it).
+    """
+    words = ascii_safe(value or "").lower().split()
+    return " ".join(CATALAN_GIVEN.get(w, w) for w in words)
 
 
 def encode(value: str, strip_accents: bool = True) -> str:
@@ -108,22 +232,44 @@ def encode(value: str, strip_accents: bool = True) -> str:
     return quote(text.encode("utf-8"))
 
 
-def url(strip_accents: bool = True, **terms) -> str:
-    """Compose a search URL. Unknown keys raise rather than vanish."""
+def url(strip_accents: bool = True, translate_given: bool = True, **terms) -> str:
+    """Compose a search URL. Unknown keys raise rather than vanish.
+
+    `match=` (the form's `filtre`) picks how terms are matched, and defaults to
+    `STARTS_WITH` because that is the form's own default -- see the header for
+    why that is the narrowest of the three and when to widen it:
+
+    >>> "filtre=C" in url(surname="revert", match=CONTAINS)
+    True
+
+    Given names are put into the index's own spelling by `catalan_given` unless
+    `translate_given=False`; surnames are never touched.
+    """
     unknown = sorted(set(terms) - set(FIELDS) - set(ALIAS))
     if unknown:
         raise ValueError(f"camps que el formulari no té: {', '.join(unknown)}")
 
     values = {f: "" for f in FIELDS}
     values["pagina"] = "1"
-    values["filtre"] = STARTS_WITH        # the form's own default
+    # Defaults, written before the loop precisely so that `match=` overrides
+    # them. The form's own default is `P`.
+    values["filtre"] = STARTS_WITH
     values["orden"] = "evento"            # by event year: most useful for us
     for key, value in terms.items():
         values[ALIAS.get(key, key)] = "" if value is None else str(value)
 
+    if values["filtre"] not in MATCH_CRITERIA:
+        raise ValueError(
+            f"criteri de coincidència {values['filtre']!r} desconegut; el "
+            "formulari només en té tres: "
+            + ", ".join(f"{k} ({v})" for k, v in MATCH_CRITERIA.items())
+        )
+
     parts = []
     for f in FIELDS:
         raw = values[f]
+        if raw and translate_given and f in GIVEN_NAME_FIELDS:
+            raw = catalan_given(raw)
         # These are codes and years, not names: never accent-strip or lowercase.
         literal = f in {"pagina", "tipus", "filtre", "orden", "sexo",
                         "principio", "final", "principio_evento", "final_evento"}
@@ -146,13 +292,24 @@ class Lookup:
     note: str
     rank: int = 0
     terms: dict = field(default_factory=dict)
+    # Which of the three criteria the URL carries. Part of what identifies the
+    # search: the same terms under `P` and under `C` are two different questions
+    # to the archive, and a zero from the narrow one does not answer the wide
+    # one. `fingerprint()` reads this, so a past narrow search cannot silence a
+    # wider one that has not been asked yet.
+    match: str = STARTS_WITH
 
     def line(self) -> str:
         mark = "" if self.possible else "~~"
         year = self.year if self.year is not None else "?"
+        criterion = (
+            "" if self.match == STARTS_WITH
+            else f"    criteri: {MATCH_CRITERIA.get(self.match, self.match)}\n"
+        )
         return (
             f"{mark}**{self.who}** — {self.sacrament} {year}, {self.parish}{mark}\n"
             f"    {self.note}\n"
             f"    {self.what_it_would_settle}\n"
+            f"{criterion}"
             f"    <{self.url}>"
         )

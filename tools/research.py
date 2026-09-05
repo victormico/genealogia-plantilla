@@ -48,8 +48,20 @@ REPORTS = ROOT / "reports"
 FS_PERSON = "https://www.familysearch.org/tree/person/details/"
 
 
-def person_block(p: Person, documents: list[str] | None = None) -> dict:
-    """One person as YAML, in the shape tools/apply.py expects."""
+def person_block(
+    p: Person,
+    documents: list[str] | None = None,
+    maybe: list[str] | None = None,
+) -> dict:
+    """One person as YAML, in the shape tools/apply.py expects.
+
+    `documents` are attached to the person when the proposal is accepted --
+    `tools.apply` passes them straight to `object_files` -- so only documents
+    that **declare** who they are about go in there. A filename guess goes to
+    `documents_possibles`, which nothing writes to the GEDCOM: it is there to be
+    read and checked by a person, and a false document hung on an ancestor is
+    exactly the kind of thing that is not found again for years.
+    """
     block = {
         "given": p.given,
         "surname": p.surname,
@@ -63,6 +75,8 @@ def person_block(p: Person, documents: list[str] | None = None) -> dict:
     }
     if documents:
         block["documents"] = documents
+    if maybe:
+        block["documents_possibles"] = maybe
     return {k: v for k, v in block.items() if v not in (None, "", [])}
 
 
@@ -164,12 +178,28 @@ def propose_parents(
     )
     corroborated = [pid for pid, urls in shared.items() if urls]
 
+    # A document of ours that names the proposed parent is the strongest thing
+    # here -- but only the ones that say so themselves, in `xrefs:`. The rest
+    # matched on the name in a filename, and a name is not much: on 05-09-2026
+    # an 1863 marriage in Fontanars was proposed as confirming a María García
+    # born in Jorquera in 1735, on the strength of a shared «García». They are
+    # kept, and separately, because a lead is worth reading -- but they do not
+    # buy confidence and they are not written to the GEDCOM.
+    def _split(pid: str) -> tuple[list[str], list[str]]:
+        found = entry.parent_documents.get(pid) or []
+        return ([d for d in found if d not in entry.guessed],
+                [d for d in found if d in entry.guessed])
+
+    named_by_document = {q.xref: _split(q.xref) for q in parents}
+    declares = any(sure for sure, _ in named_by_document.values())
+    suggests = any(maybe for _, maybe in named_by_document.values())
+
     # Confidence is about the *link*, not about FamilySearch being tidy. A
     # certificate of our own naming the parent is the strongest evidence here.
     if mine and len(mine) == len(parents):
         confidence = "high"
         why = "ho vas entrar tu mateix a FamilySearch"
-    elif entry.parent_documents:
+    elif declares:
         confidence = "high"
         why = "un document nostre anomena el progenitor proposat"
     elif corroborated:
@@ -194,6 +224,14 @@ def propose_parents(
         confidence = "low"
         why = "FamilySearch té el parentiu però amb poques dades, entrades per altri"
 
+    # Said after the fact and never instead of a reason: a name that matches is
+    # something to go and read, not something that has been established.
+    if suggests and not declares:
+        why += (
+            " · i un document nostre podria referir-se al progenitor proposat, "
+            "per coincidència de noms: cal comprovar-ho abans de comptar-hi"
+        )
+
     proposal = {
         "kind": "parents",
         "target": p.xref,
@@ -205,7 +243,7 @@ def propose_parents(
         "source_url": f"{FS_PERSON}{p.fsftid}",
         "parents": [
             {
-                **person_block(q, entry.parent_documents.get(q.xref)),
+                **person_block(q, *named_by_document[q.xref]),
                 **({"editors": editors[q.xref]} if q.xref in editors else {}),
                 **({"entrat_per_tu": True} if q.xref in mine else {}),
                 **(
@@ -522,6 +560,11 @@ def main() -> int:
         "#\n"
         "# Comprova-ho amb reports/frontier.md al costat. Els candidats de tipus\n"
         "# «records» no estan verificats: la cerca proposa, no confirma.\n"
+        "#\n"
+        "# documents:            documents nostres que DIUEN de qui parlen (xrefs:).\n"
+        "#                       S'adjunten a la persona en acceptar la proposta.\n"
+        "# documents_possibles:  només hi coincideix el nom del fitxer. No s'escriuen\n"
+        "#                       enlloc: són per anar a llegir-los i comprovar-ho.\n"
         "\n"
     )
     out.write_text(

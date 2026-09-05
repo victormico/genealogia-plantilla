@@ -19,8 +19,9 @@ import tempfile
 from pathlib import Path
 
 from ..apv import coverage
+from ..apv import verify
 from ..apv.parse import parse_fiche, parse_results, to_markdown
-from ..apv.query import BAPTISM, encode, url
+from ..apv.query import BAPTISM, CONTAINS, ENDS_WITH, Lookup, encode, url
 from ..apv.session import Quota
 
 
@@ -376,6 +377,136 @@ def test_url_keeps_year_and_code_fields_literal():
     assert "final_evento=1650" in built
     assert "sexo=H" in built
 
+
+
+# -- the match criterion, and the given name --------------------------------
+#
+# The default is `P`, the narrowest of the three, and it used to be the only one
+# reachable. On this index that turns a compound given name into a false zero:
+# «Vicent Manuel Revert» is not found by `nom=manuel` under a starts-with match.
+
+def test_url_can_widen_the_match_criterion():
+    assert "filtre=C" in url(surname="revert", match=CONTAINS)
+    assert "filtre=F" in url(surname="revert", match=ENDS_WITH)
+    # And the default has not moved: nothing that already worked changes.
+    assert "filtre=P" in url(surname="revert")
+
+
+def test_url_refuses_a_criterion_the_form_does_not_have():
+    try:
+        url(surname="revert", match="X")
+    except ValueError as exc:
+        assert "criteri" in str(exc)
+    else:
+        raise AssertionError("un criteri inventat ha de petar, no arribar a l'arxiu")
+
+
+def test_given_names_go_in_the_spelling_the_index_uses():
+    # Read off the live index: `nom=juan` over the Ontinyent baptisms returns
+    # zero and `nom=joan` returns four. The fiches are all in Valencian.
+    assert "nom=joan" in url(given="Juan")
+    assert "nom=joan%20baptista" in url(given="Juan Bautista").replace("+", "%20")
+    assert "nompa=josep" in url(father_given="José")
+    # A name the table does not know goes through untouched...
+    assert "nom=eustaqui" in url(given="Eustaqui")
+    # ...and surnames are never translated: they are not given names.
+    assert "a1=juan" in url(surname="Juan")
+
+
+def test_the_wildcard_reaches_the_archive_as_typed():
+    # The form offers `_` for a letter you are unsure of. It is unreserved in a
+    # URL, so percent-encoding must leave it alone -- otherwise the advice in
+    # this module's header is advice that does not work.
+    assert encode("ferr_ndis") == "ferr_ndis"
+    assert "a1=ferr_ndis" in url(surname="Ferr_ndis")
+
+
+# -- --asked, which is the only way a zero gets written down ------------------
+
+def _lookup(**over):
+    """A plan item, in the shape `plan()` builds them."""
+    fields = dict(
+        xref="I00001", who="Vicent Revert (1790, Sosa 8) @I00001@",
+        sacrament="bateig", parish="ontinyent", year=1790,
+        what_it_would_settle="pares i quatre avis", url="https://example.invalid/",
+        possible=True, note="",
+        terms={"a1": "revert", "a2": "torro", "from": 1788, "to": 1792},
+    )
+    fields.update(over)
+    return Lookup(**fields)
+
+
+def test_asked_writes_the_terms_so_an_empty_search_is_not_paid_twice():
+    """`--asked` is the whole point of the log, and it raised TypeError.
+
+    `Quota.spend` had no `search` parameter, so every `--asked` invocation from
+    01-08-2026 to 05-09-2026 died before writing anything -- and a search that
+    comes back empty leaves no transcription behind, so the plan proposed it
+    again the next day. That is the incident of 03-08-2026 all over again.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        quota_file = tmp / "apv-quota.json"
+
+        class _FakeSession:
+            quota = Quota(path=quota_file)
+
+        lookup = _lookup()
+        written = verify.record_asked(_FakeSession(), [lookup], ["1:0 resultats"])
+        assert written == 1, "una consulta apuntada no s'ha de perdre en silenci"
+
+        entry = json.loads(quota_file.read_text(encoding="utf-8"))["log"][0]
+        assert "0 resultats" in entry["what"]
+        assert entry["search"] == verify.fingerprint(lookup), (
+            "sense els termes, `asked_before` es salta l'entrada i el pla la "
+            "torna a proposar"
+        )
+
+        # And the round trip: the same lookup, planned again tomorrow, is
+        # recognised as already asked.
+        assert verify._matches_a_past_search(
+            lookup, verify.asked_before(quota_file)
+        ), "una cerca apuntada s'ha de reconèixer"
+
+
+def test_a_number_that_is_not_in_the_plan_is_refused_not_counted():
+    with tempfile.TemporaryDirectory() as d:
+        quota_file = Path(d) / "apv-quota.json"
+
+        class _FakeSession:
+            quota = Quota(path=quota_file)
+
+        session = _FakeSession()
+        assert verify.record_asked(session, [_lookup()], ["7:res"]) == 0
+        assert session.quota.used == 0, "no es compta el que no s'ha demanat"
+
+
+def test_a_narrow_zero_does_not_answer_a_wider_search():
+    """A `P` search that came back empty says nothing about `C`.
+
+    This is the same lesson as the rest of the file: what the tool did not ask
+    is not a «no» from the archive. And a search in this log is never asked
+    again, so reading it the other way would keep the wrong answer for good.
+    """
+    narrow = _lookup()
+    wide = _lookup(match=CONTAINS)
+    past = [verify.fingerprint(narrow)]
+    assert verify._matches_a_past_search(narrow, past), "la mateixa cerca sí"
+    assert not verify._matches_a_past_search(wide, past), (
+        "un zero amb «coincideix principi» no respon «conté»"
+    )
+    # The other way round it does: everything the narrow search would have
+    # found, the wide one found too.
+    assert verify._matches_a_past_search(narrow, [verify.fingerprint(wide)])
+
+
+def test_entries_written_before_the_criterion_was_recorded_still_match():
+    # `cache/apv-quota.json` holds hand-written entries from before `match` was
+    # part of the fingerprint. Every search this tool built then was `P`, and
+    # reading them as anything else would re-propose all of them.
+    old = verify.fingerprint(_lookup())
+    del old["match"]
+    assert verify._matches_a_past_search(_lookup(), [old])
 
 
 def test_ontinyent_death_hole_1729_1733():

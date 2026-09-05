@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -111,12 +112,16 @@ def slug(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", plain.lower()))
 
 
-def index_documents() -> dict[str, list[str]]:
-    """Map each document in Fonts/ to its name tokens, for matching against people."""
+def index_documents(paths: Iterable[Path] | None = None) -> dict[str, list[str]]:
+    """Map each document in Fonts/ to its name tokens, for matching against people.
+
+    `paths` defaults to every tracked file under `Fonts/`; passing a list is for
+    tests, which need to say what is on disk rather than depend on it.
+    """
     out: dict[str, list[str]] = {}
-    if not FONTS.exists():
+    if paths is None and not FONTS.exists():
         return out
-    for path in sorted(_tracked_fonts_files()):
+    for path in sorted(_tracked_fonts_files() if paths is None else paths):
         if path.name.startswith("."):
             continue
         # Reading copies and the manifest are derived, not documents: indexing
@@ -151,6 +156,141 @@ def _close(token: str, candidates: list[str], threshold: float = 0.85) -> bool:
     return any(
         SequenceMatcher(None, token, other).ratio() >= threshold for other in candidates
     )
+
+
+# ---------------------------------------------------------------------------
+# What a filename guess is allowed to claim
+# ---------------------------------------------------------------------------
+#
+# The guess below joins a person to a document on **names alone**. In a village
+# where half the parish shares two surnames that is already thin, and with a
+# surname like García or Martínez it is close to meaningless. Found on
+# 05-09-2026: a 1735 baptism in Jorquera (Albacete) was credited with «un
+# document nostre» that is an 1863 marriage in Fontanars dels Alforins
+# (València). A hundred and twenty-eight years and two hundred and fifty
+# kilometres apart, sharing one of the commonest surnames in Spain -- and
+# `reports/frontier.md` printed it as **«Confirmat per un document nostre»**,
+# which is what pushed the proposal up the ranking. Accepting it as it stood
+# would have written that marriage into the GEDCOM hanging off her
+# (`tools.apply` passes a block's `documents:` straight to `object_files`), and
+# a false document attached to a person costs an afternoon to find later.
+#
+# So the two guards below, both cheap, both refusing only on a positive
+# contradiction. Neither is applied to a document that declares `xrefs:`: a
+# document that says who it is about has been read by a person, and that beats
+# any check made here.
+
+# Not `\b`: filenames separate words with underscores, and `_` is a word
+# character, so `\b` never fires before the year in `…_Matrimoni_1863`. Digits
+# either side are what has to be excluded, and that is what this says.
+_YEAR = re.compile(r"(?<!\d)(1[3-9]\d\d|20\d\d)(?!\d)")
+
+# How far either side of a birth a document can still name someone. Wide on
+# purpose: a fiche of a grandchild names their grandparents, and that is a real
+# mention seventy years after the fact, while a marriage register can name a
+# dead parent later still. What this refuses is not a wide window but a
+# different century.
+YEARS_BEFORE_BIRTH = 20   # a birth year that is somebody's estimate can be off
+YEARS_AFTER_BIRTH = 110
+
+
+# A baptism is the one sacrament tied to where the person was born; everything
+# else follows them wherever they went. Written the several ways the folders
+# here spell it, Catalan and Castilian alike.
+_A_BAPTISM = re.compile(
+    r"\b(bateig|batejos|baptisme|bautismo|bautizo|naixement|nacimiento)\b", re.I
+)
+
+
+def _words(path: str) -> str:
+    """The filename as words. Underscores are separators here, not letters."""
+    return Path(path).stem.replace("_", " ")
+
+
+def _document_years(path: str) -> list[int]:
+    """The years in a document's filename, which is all a guess has to go on."""
+    return [int(y) for y in _YEAR.findall(Path(path).stem)]
+
+
+def _document_region(path: str) -> str:
+    """Which archive cluster a document's path names, or `unknown`.
+
+    The folder is the archive («Fonts/Arxiu Parroquial València»), and the towns
+    of each cluster are in `config.yaml` already. Nothing is inferred from a
+    path that names no place at all: `unknown` means "no opinion", never "no".
+    """
+    text = fold(path)
+    for name, towns in config.regions().items():
+        if any(town and town in text for town in towns):
+            return name
+    for needle, name in config.region_fallbacks():
+        if fold(needle) in text:
+            return name
+    return config.UNPLACED
+
+
+def guess_is_plausible(person: Person, path: str) -> bool:
+    """Could this document be about this person at all, place and date aside from names?
+
+    Only ever used to **refuse** a guess, and only on a contradiction:
+
+      * the document is dated well outside any lifetime the person could have
+        had, or
+      * it is a **baptism** from an archive cluster that is not theirs -- a
+        parish in València does not hold the baptism of somebody born in
+        Albacete.
+
+    The baptism restriction on the second one is the whole care in it. A
+    baptism is tied to where the person was born; a marriage or a burial is
+    tied to wherever they had got to by then, and families move -- this tree
+    has a branch from Albacete precisely because somebody married into
+    València. Refusing every document from another province would drop the
+    records of every migrant, which is the same false «no» as the one this is
+    meant to stop, pointed the other way.
+
+    A document with no year in its name, a person with no birth year, a place
+    that no cluster claims: all of those keep the guess. An unchecked thing is
+    not a «no», which is the same lesson `tools/fs/probe.py` and
+    `tools/apv/verify.py` each learned separately.
+    """
+    years = _document_years(path)
+    if years and person.birth_year:
+        window = range(
+            person.birth_year - YEARS_BEFORE_BIRTH,
+            person.birth_year + YEARS_AFTER_BIRTH + 1,
+        )
+        if not any(y in window for y in years):
+            return False
+
+    if _A_BAPTISM.search(_words(path)):
+        theirs = _document_region(path)
+        mine = config.region_for(person.birth_town, fold(person.birth_place or ""))
+        if config.UNPLACED not in (theirs, mine) and theirs != mine:
+            return False
+    return True
+
+
+def _guessed_documents(person: Person, docs: dict[str, list[str]]) -> list[str]:
+    """Documents whose *filename* names this person, guards applied.
+
+    **Every** surname must appear, plus the first given name. Anything looser
+    produces false corroboration, because in a village the same few surnames
+    recur constantly: matching any two tokens can credit a baptism certificate
+    to a person's own mother, or to an unrelated person sharing one surname and
+    a given name. **A wrongly confirmed filiation is worse than an unconfirmed
+    one.**
+    """
+    surnames = [s for s in person.surname_parts if len(s) > 2]
+    givens = [g for g in slug(person.given).split() if len(g) > 2]
+    if not (surnames and givens):
+        return []
+    return [
+        path
+        for path, tokens in docs.items()
+        if all(_close(s, tokens) for s in surnames)
+        and _close(givens[0], tokens)
+        and guess_is_plausible(person, path)
+    ]
 
 
 def declared_documents() -> dict[str, list[str]]:
@@ -234,26 +374,21 @@ def documents_for(
     mention, which is how a grandfather can be credited with his grandson's
     baptism because both share a name.
 
-    Only undeclared documents are guessed at, and there the rule stays strict:
-    **every** surname must appear, plus the first given name. Anything looser
-    produces false corroboration, because in a village the same few surnames
-    recur constantly: matching any two tokens can credit a baptism certificate
-    to a person's own mother, or to an unrelated person sharing one surname and
-    a given name. **A wrongly confirmed filiation is worse than an unconfirmed
-    one.**
+    Only undeclared documents are guessed at, by `_guessed_documents`, and the
+    guess is a **name** join with the guards of `guess_is_plausible` over it.
+    Which of the two a hit came from is not visible here -- the caller works it
+    out from `declared`, and `FrontierEntry.guessed` carries it -- but it is the
+    difference between «this document names them» and «this document might be
+    about them», so nothing downstream should print them the same way.
     """
     declared = declared or {}
     hits = list(declared.get(person.xref, []))
     declaring = _covered_by_declaration(declared)
-
-    surnames = [s for s in person.surname_parts if len(s) > 2]
-    givens = [g for g in slug(person.given).split() if len(g) > 2]
-    if surnames and givens:
-        for path, tokens in docs.items():
-            if path in hits or path in declaring:
-                continue
-            if all(_close(s, tokens) for s in surnames) and _close(givens[0], tokens):
-                hits.append(path)
+    hits += [
+        path
+        for path in _guessed_documents(person, docs)
+        if path not in hits and path not in declaring
+    ]
     return hits
 
 
@@ -277,16 +412,14 @@ def guess_disagreements(
     out: list[tuple[str, str, str]] = []
     for xref, person in tree.people.items():
         mine = set(declared.get(xref, []))
-        surnames = [s for s in person.surname_parts if len(s) > 2]
-        givens = [g for g in slug(person.given).split() if len(g) > 2]
-        guessed: set[str] = set()
-        if surnames and givens:
-            for path, tokens in docs.items():
-                if all(_close(s, tokens) for s in surnames) and _close(
-                    givens[0], tokens
-                ):
-                    # A guess about a scan is a guess about its transcription.
-                    guessed.add(speaks_for.get(path, path))
+        # The same guess `documents_for` makes, guards and all: a row here has
+        # to mean the guess disagrees with a declaration, not that this function
+        # and that one match differently.
+        guessed = {
+            # A guess about a scan is a guess about its transcription.
+            speaks_for.get(path, path)
+            for path in _guessed_documents(person, docs)
+        }
         for note in sorted(guessed & set(speaks_for.values()) - mine):
             out.append((xref, note, "només l'heurístic"))
         for note in sorted(mine - guessed):
@@ -304,6 +437,10 @@ class FrontierEntry:
     documents: list[str] = field(default_factory=list)
     # Documents in Fonts/ naming a proposed parent: independent corroboration.
     parent_documents: dict[str, list[str]] = field(default_factory=dict)
+    # Of everything in the two fields above, the paths that are a **guess** from
+    # the filename rather than a document declaring who it is about. Kept so the
+    # report can say which of the two it is: one confirms, the other suggests.
+    guessed: set[str] = field(default_factory=set)
     archive: str = ""
     archive_score: int = 0
     score: float = 0.0
@@ -338,10 +475,21 @@ def rank(entry: FrontierEntry) -> float:
         score -= 3.0
 
     score += entry.archive_score * 0.6
-    score += len(entry.documents) * 2.0  # evidence already on disk
+
+    # Evidence already on disk -- but a declaration and a filename guess are not
+    # the same evidence, and scoring them alike is what floated a proposal whose
+    # only «document nostre» was an 1863 marriage in another province. A guess
+    # still counts for something: it is a lead, and reading it is cheap.
+    def weight(paths, declared_weight: float, guessed_weight: float) -> float:
+        return sum(
+            guessed_weight if p in entry.guessed else declared_weight for p in paths
+        )
+
+    score += weight(entry.documents, 2.0, 1.0)
     # A certificate naming the proposed parent confirms the link without relying
     # on FamilySearch at all: worth more than a document about the person.
-    score += sum(len(v) for v in entry.parent_documents.values()) * 3.0
+    for paths in entry.parent_documents.values():
+        score += weight(paths, 3.0, 1.0)
     return round(score, 2)
 
 
@@ -476,6 +624,7 @@ def build(
         )
         entry.archive_score, entry.archive = score, text
         entry.documents = documents_for(person, docs, declared)
+        entry.guessed = set(entry.documents) - set(declared.get(person.xref, []))
         own = set(entry.documents)
         for parent in entry.fs_parents:
             # A document that names the child as well as the parent proves
@@ -485,6 +634,7 @@ def build(
             ]
             if hits:
                 entry.parent_documents[parent.xref] = hits
+                entry.guessed |= set(hits) - set(declared.get(parent.xref, []))
         entry.score = rank(entry)
         entries.append(entry)
 
@@ -581,16 +731,29 @@ def write_report(
             )
             # A certificate on disk for the *proposed parent* corroborates the
             # link independently of FamilySearch, which is the strongest signal
-            # available here.
+            # available here -- **when the document says so itself**. A document
+            # that merely matches by name is a lead, and calling it a
+            # confirmation is how an 1863 marriage in València came to «confirm»
+            # a woman born in Albacete in 1735. Two different sentences,
+            # because they are two different claims.
             for doc in e.parent_documents.get(parent.xref, ()):
-                lines.append(f"  - **Confirmat per un document nostre**: `{doc}`")
+                lines.append(
+                    f"  - Un document nostre **podria** referir-s'hi (coincidència "
+                    f"de noms, sense comprovar): `{doc}`"
+                    if doc in e.guessed
+                    else f"  - **Confirmat per un document nostre**: `{doc}`"
+                )
         if e.upstream:
             lines.append(
                 f"- Per damunt: **{e.upstream} avantpassats** més"
                 + (f", fins al {e.oldest_upstream}" if e.oldest_upstream else "")
             )
         for doc in e.documents:
-            lines.append(f"- Document que ja tenim: `{doc}`")
+            lines.append(
+                f"- Document que **podria** ser-ne (coincidència de noms): `{doc}`"
+                if doc in e.guessed
+                else f"- Document que ja tenim: `{doc}`"
+            )
         if e.archive:
             lines.append(f"- Arxiu: {e.archive}")
         lines.append("")
