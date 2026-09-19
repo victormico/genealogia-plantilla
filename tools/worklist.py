@@ -107,9 +107,18 @@ def write_report(
     only: str | None = None,
 ) -> None:
     grouped: dict[str, list[FrontierEntry]] = {}
+    living = 0
     for entry in entries:
         if entry.status == "ready":
             continue  # nothing to research: FamilySearch already has the answer
+        if entry.status == "living":
+            # Not archive work at all. Leaving them in produced the worst rows
+            # in this file: a prefilled FamilySearch record search, with a
+            # living person's name and birth date in the query string, for
+            # records that are sealed and a search that cannot return them.
+            # See `tools.living` and the last section of reports/frontier.md.
+            living += 1
+            continue
         grouped.setdefault(region_of(entry), []).append(entry)
 
     guides = config.region_guides()
@@ -135,6 +144,16 @@ def write_report(
         "de FamilySearch prohibeixen rastrejar-ne el web. Per això això és una llista",
         "d'enllaços per obrir a mà i no un programa que ho faci sol.",
         "",
+    ]
+    if living:
+        lines += [
+            f"No hi surten **{living} persones contemporànies** sense pares apuntats:",
+            "els seus registres estan tancats i FamilySearch les amaga, o siga que no",
+            "hi ha cap arxiu on anar. Són a l'últim apartat de",
+            "[`reports/frontier.md`](frontier.md).",
+            "",
+        ]
+    lines += [
         "| Zona | Persones |",
         "| --- | --- |",
     ]

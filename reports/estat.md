@@ -12,6 +12,8 @@ llocs alhora, i `tools.lint --xifres` és el que ho detecta si algú ho fa.
 | Famílies | 8 |
 | Amb identificador de FamilySearch | 7 |
 | Sense pares (front de recerca) | 9 |
+| — recerca d'avantpassats | 7 |
+| — persones contemporànies | 2 |
 | Període | **1845** – 2019 |
 
 ## Caselles d'avantpassats

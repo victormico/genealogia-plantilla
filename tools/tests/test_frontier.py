@@ -91,10 +91,19 @@ def test_no_source_is_never_stuck(canon: Tree) -> None:
         f"{len(unknown)} de {len(with_fsftid)}",
     )
 
-    unlinked = [e for e in entries if not e.person.fsftid]
+    # Everyone else is "unlinked" -- except the presumed living, who are
+    # classified before FamilySearch is consulted at all and never reach it.
+    # See tools/tests/test_living.py.
+    unlinked = [
+        e for e in entries if not e.person.fsftid and e.status != "living"
+    ]
     check(
         all(e.status == "unlinked" for e in unlinked),
-        "les que no tenen _FSFTID continuen «unlinked»",
+        "les que no tenen _FSFTID ni són contemporànies continuen «unlinked»",
+    )
+    check(
+        bool([e for e in entries if e.status == "living"]),
+        "i les contemporànies van a part",
     )
 
 

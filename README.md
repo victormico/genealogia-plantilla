@@ -101,6 +101,7 @@ Prova que tot va, contra l'arbre d'exemple i sense tocar la xarxa:
 .venv/bin/python -m tools.tests.test_frontmatter  # el vocabulari de les fitxes .md
 .venv/bin/python -m tools.tests.test_obsidian     # l'exportació per a Charted Roots
 .venv/bin/python -m tools.tests.test_frontier     # ready/stuck/unknown/unlinked
+.venv/bin/python -m tools.tests.test_living       # qui es dona per viu, i que no és recerca
 .venv/bin/python -m tools.tests.test_apv          # 30 proves de l'índex diocesà
 .venv/bin/python -m tools.tests.test_adg          # 20 proves del catàleg de Girona
 .venv/bin/python -m tools.frontier --top 5        # qui bloqueja l'arbre d'exemple
@@ -229,8 +230,23 @@ lloc de donar-la per encallada.
   (FamilySearch també s'hi atura), `unknown` (no s'ha pogut comprovar, ni amb
   pedigrí en viu ni amb la instantània de sota — `tools.fs.check` és qui els
   buida) o `unlinked` (encara no s'ha trobat a FamilySearch).
+
+  Abans de tot això hi ha `living`, i mana per damunt de la resta: les persones
+  que **probablement encara viuen** van a un apartat propi al final, fora de la
+  cua i sense puntuar. No és una categoria de recerca sinó el contrari d'una.
+  Per a algú viu, cada una de les altres quatre és un consell que no es pot
+  seguir: els llibres parroquials i el Registre Civil estan tancats justament
+  per protegir-lo, FamilySearch amaga els registres de persones vives, i els
+  seus pares no són perduts, és que ningú no els ha escrit. Barrejar-los amb els
+  avantpassats inflava els totals i enviava a un arxiu a buscar-hi qui es pot
+  telefonar. Ho decideix `tools.living`: una defunció apuntada mana; si no
+  n'hi ha, val l'any de naixement, i qui no en té l'hereta dels parents que sí
+  que en tenen, a 30 anys per generació. El llindar és `contemporanis:` a
+  `config.yaml` — 100 anys per defecte.
 - **`worklist.md`** — enllaços de cerca per a les persones que només es poden
-  resoldre anant als arxius.
+  resoldre anant als arxius. Les contemporànies no hi són: hi posava un enllaç
+  de cerca de registres amb el nom i la data de naixement d'una persona viva
+  dins de la URL, per a uns registres segellats.
 - **`estat.md`** — els comptadors de l'arbre (persones, famílies, generacions
   d'avantpassats), calculats i no retipiats. `tools.lint --xifres` compara
   aquests números amb el que digui el `README.md` a mà, si hi repeteixes cap.
