@@ -117,6 +117,8 @@ def check_xifres(estat: Estat, report: Report, root: Path | None = None) -> None
         "Famílies": estat.families,
         "Amb identificador de FamilySearch": estat.with_fsftid,
         "Sense pares (front de recerca)": estat.without_parents,
+        "— recerca d'avantpassats": estat.research_frontier,
+        "— persones contemporànies": estat.living_without_parents,
     }
     every, markdown, lectura = estat.fonts_files()
     routes, route_lines, _ = estat.gedcom_paths()

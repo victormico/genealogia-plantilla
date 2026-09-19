@@ -31,6 +31,7 @@ from pathlib import Path
 
 from . import config
 from .config import tree_path
+from .living import presumed_living
 from .people import Tree
 
 from .config import ROOT
@@ -82,6 +83,23 @@ class Estat:
     @property
     def without_parents(self) -> int:
         return len(self.tree.leaves())
+
+    @property
+    def living_without_parents(self) -> int:
+        """Dead ends that are somebody still alive, not a lost ancestor.
+
+        Counted apart because they are a different job: their registers are
+        closed, FamilySearch hides them, and their parents are a question for
+        the family. See `tools.living` and the last section of
+        `reports/frontier.md`.
+        """
+        leaves = {p.xref for p in self.tree.leaves()}
+        return len(leaves & set(presumed_living(self.tree)))
+
+    @property
+    def research_frontier(self) -> int:
+        """Dead ends that are actually research: the total, less the living."""
+        return self.without_parents - self.living_without_parents
 
     @property
     def period(self) -> tuple[int, int]:
@@ -217,6 +235,8 @@ def render(estat: Estat) -> str:
         f"| Famílies | {estat.families} |",
         f"| Amb identificador de FamilySearch | {estat.with_fsftid} |",
         f"| Sense pares (front de recerca) | {estat.without_parents} |",
+        f"| — recerca d'avantpassats | {estat.research_frontier} |",
+        f"| — persones contemporànies | {estat.living_without_parents} |",
         f"| Període | **{first}** – {last} |",
         "",
     ]

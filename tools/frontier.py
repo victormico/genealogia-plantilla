@@ -3,11 +3,18 @@
 The frontier is everyone in the canonical tree with no parents recorded. Each
 one is classified by what it would actually take to get past them:
 
+  living      probably still alive -> not archive work at all; ask the family
   ready       FamilySearch already knows their parents -> import, no research
   stuck       linked to FamilySearch, but FamilySearch is stuck too -> archives
   unknown     linked to FamilySearch, but neither a live pedigree nor the
               committed snapshot says whether it knows the parents -> refetch
   unlinked    not found on FamilySearch yet -> search first
+
+`living` is decided first and wins over everything else, because for a living
+person the other four are all wrong: the registers are closed, FamilySearch
+hides them, and their parents are a question for the family, not a search. See
+`tools.living` for how the judgement is made and `contemporanis:` in
+config.yaml for the one number it depends on.
 
 `ready`/`stuck` come from `cache/pedigree.json` when it exists (needs
 FamilySearch credentials), and otherwise from `reports/frontier-fs.json`, a
@@ -36,6 +43,7 @@ from pathlib import Path
 from . import config, frontmatter, report
 from .config import tree_path
 from .fs.fetch import LiveTree
+from .living import Verdict, presumed_living
 from .normalize import fold
 from .people import Person, Tree
 
@@ -297,7 +305,7 @@ def guess_disagreements(
 @dataclass
 class FrontierEntry:
     person: Person
-    status: str  # ready | stuck | unknown | unlinked
+    status: str  # living | ready | stuck | unknown | unlinked
     fs_parents: list[Person] = field(default_factory=list)
     upstream: int = 0  # new ancestors reachable above this person
     oldest_upstream: int | None = None
@@ -308,11 +316,20 @@ class FrontierEntry:
     archive_score: int = 0
     score: float = 0.0
     notes: list[str] = field(default_factory=list)
+    # Why `status == "living"`, in words: see tools.living.
+    living_reason: str = ""
 
 
 def rank(entry: FrontierEntry) -> float:
-    """Higher is more worth doing next."""
+    """Higher is more worth doing next.
+
+    A presumed-living person scores nothing: they are not in the queue. Ranking
+    them at all would put a phone call to an aunt in the same ordering as a
+    parish book, and whatever number came out would be meaningless.
+    """
     p = entry.person
+    if entry.status == "living":
+        return 0.0
     score = 0.0
 
     # A closer generation unlocks more of the direct line.
@@ -425,11 +442,18 @@ def build(
     declared = declared_documents()
     known_pids = {p.fsftid for p in canon.people.values() if p.fsftid}
     snapshot_people = (snapshot or {}).get("persones", {})
+    # Decided before anything else: for someone still alive, every other status
+    # would send the reader to a register that is closed by law or to a
+    # FamilySearch search that cannot return them.
+    alive: dict[str, Verdict] = presumed_living(canon)
     entries: list[FrontierEntry] = []
 
     for person in canon.leaves():
         entry = FrontierEntry(person=person, status="unlinked")
-        if person.fsftid and live:
+        if person.xref in alive:
+            entry.status = "living"
+            entry.living_reason = alive[person.xref].reason
+        elif person.fsftid and live:
             parents = live.parents(person.fsftid)
             if parents:
                 entry.status = "ready"
@@ -471,10 +495,14 @@ def build(
             # that would be a claim we cannot back up.
             entry.status = "unknown"
 
-        score, text = config.archive_hint(
-            person.birth_town, fold(person.birth_place or "")
-        )
-        entry.archive_score, entry.archive = score, text
+        if entry.status != "living":
+            # Not computed for the living: their registers are closed, so the
+            # town's archive is not where the answer is, and naming it would
+            # read as a lead.
+            score, text = config.archive_hint(
+                person.birth_town, fold(person.birth_place or "")
+            )
+            entry.archive_score, entry.archive = score, text
         entry.documents = documents_for(person, docs, declared)
         own = set(entry.documents)
         for parent in entry.fs_parents:
@@ -516,11 +544,15 @@ def write_report(
     snapshot: dict | None,
     path: Path,
 ) -> None:
+    living = [e for e in entries if e.status == "living"]
     ready = [e for e in entries if e.status == "ready"]
     stuck = [e for e in entries if e.status == "stuck"]
     unknown = [e for e in entries if e.status == "unknown"]
     unlinked = [e for e in entries if e.status == "unlinked"]
     importable = sum(e.upstream for e in ready)
+    # The queue is the research, and the living are not in it. Every total in
+    # the summary is of the research, with the living counted once, apart.
+    queue = len(entries) - len(living)
 
     lines = [
         "# Front de recerca",
@@ -530,7 +562,9 @@ def write_report(
         _provenance(entries, live, snapshot),
         "",
         f"Persones de l'arbre principal sense pares: **{len(entries)}** de "
-        f"{len(canon.people)}.",
+        f"{len(canon.people)}. D'aquestes, **{queue}** són recerca "
+        f"d'avantpassats i **{len(living)}** són persones que probablement "
+        "encara viuen, que no es busquen a cap arxiu.",
         "",
         "| Situació | Persones | Què cal fer |",
         "| --- | --- | --- |",
@@ -538,6 +572,8 @@ def write_report(
         f"| Encallades | **{len(stuck)}** | FamilySearch també s'atura aquí: cal arxiu |",
         f"| Sense comprovar | **{len(unknown)}** | Cal `tools.fs.fetch` per saber-ho |",
         f"| Sense enllaçar | **{len(unlinked)}** | Primer cal trobar-les a FamilySearch |",
+        f"| **Recerca, en total** | **{queue}** | |",
+        f"| Contemporànies | {len(living)} | No és recerca: preguntar-ho a casa |",
         "",
         f"Per damunt de les {len(ready)} primeres hi ha **{importable} avantpassats "
         f"nous** disponibles a FamilySearch. L'arbre passaria de "
@@ -547,6 +583,9 @@ def write_report(
         "avantpassat directe i no col·lateral, que FamilySearch ja tingui la feina",
         "feta, tenir lloc i any de naixement per poder cercar, la cobertura de",
         "l'arxiu corresponent i els documents que ja tenim a `Fonts/`.",
+        "",
+        "Les persones contemporànies no hi entren, ni tenen puntuació: van totes",
+        "juntes a l'últim apartat.",
         "",
         "---",
         "",
@@ -595,7 +634,7 @@ def write_report(
             lines.append(f"- Arxiu: {e.archive}")
         lines.append("")
 
-    for title, group, blurb in (
+    sections: list[tuple[str, list[FrontierEntry], str]] = [
         (
             f"Encallades també a FamilySearch ({len(stuck)})",
             stuck,
@@ -615,7 +654,8 @@ def write_report(
             "Encara no s'han trobat a FamilySearch. El primer pas és cercar-les-hi; "
             "després ja es veurà si hi ha ascendència.",
         ),
-    ):
+    ]
+    for title, group, blurb in sections:
         lines.extend([f"## {title}", "", blurb, "",
                       "| Persona | G | Naixement | Lloc | Documents | Arxiu on buscar |",
                       "| --- | --- | --- | --- | --- | --- |"])
@@ -629,7 +669,85 @@ def write_report(
             )
         lines.append("")
 
+    lines.extend(_living_section(living, canon))
     report.write(path, "\n".join(lines) + "\n")
+
+
+def _household(canon: Tree, person: Person) -> str:
+    """Who this person is in the tree through -- spouse first, then children.
+
+    It is the column that answers "who do I ask?", which for a living person is
+    the whole of the research. It is also the only thing that explains why
+    somebody with no dates and no ancestry is in the tree at all.
+    """
+    # Names only, no dates: the spouse of a living person is usually living
+    # too, and this column exists to say who to ask, not to date them.
+    spouses = [f"{q.given} {q.surname}".strip() for q in canon.spouses(person.xref)]
+    if spouses:
+        return "casat/da amb " + ", ".join(spouses)
+    children = [f"{q.given} {q.surname}".strip() for q in canon.children(person.xref)]
+    if children:
+        return "pare/mare de " + ", ".join(children)
+    return "—"
+
+
+def _living_section(living: list[FrontierEntry], canon: Tree) -> list[str]:
+    """The contemporaries, apart from the research and said to be apart.
+
+    They used to sit in `Sense enllaçar amb FamilySearch`, under the line "the
+    first step is to search for them there", between a 17th-century farmhand
+    and a great-great-grandmother. Three things were wrong with that at once:
+    the step it proposed cannot be taken (FamilySearch hides the living), the
+    archive column named a register that is closed by law, and the counts above
+    made the research look bigger than it is. So they get a section, a
+    different set of columns -- there is no archive to name and no generation
+    to sort by -- and their own instruction.
+    """
+    lines = [
+        f"## Persones contemporànies ({len(living)})",
+        "",
+        "**Això no és recerca.** Són persones de l'arbre que probablement encara",
+        "viuen. Sovint hi han entrat per matrimoni, però n'hi pot haver d'avantpassades",
+        "directes: una àvia viva té una generació com qualsevol altra. No tenen pares",
+        "apuntats perquè ningú no els ha escrit, no perquè estiguin perduts.",
+        "",
+        "No té sentit buscar-les enlloc:",
+        "",
+        "- **Els arxius no les tenen obertes.** Els llibres parroquials i el Registre",
+        "  Civil estan tancats justament per protegir les persones vives.",
+        "- **FamilySearch les amaga.** Els registres de persones vives hi són privats;",
+        "  una cerca no en tornarà mai cap.",
+        "- **A casa ho saben.** Els pares d'aquestes persones es demanen, no es cerquen.",
+        "",
+        "Per això no surten a la cua de recerca ni a `reports/worklist.md`, i no se'ls",
+        "puntua. Qui les vulgui completar, que ho pregunti i ho apunti a l'arbre.",
+        "",
+    ]
+    if not living:
+        lines.extend([
+            "Ara mateix no n'hi ha cap.",
+            "",
+        ])
+        return lines
+    lines.extend([
+        "| Persona | G | Vincle amb l'arbre | Per què es considera contemporània |",
+        "| --- | --- | --- | --- |",
+    ])
+    for e in sorted(living, key=lambda e: e.person.xref):
+        p = e.person
+        lines.append(
+            f"| @{p.xref}@ {p.given} {p.surname} | {p.generation or '—'} "
+            f"| {_household(canon, p)} | {e.living_reason} |"
+        )
+    lines.extend([
+        "",
+        "El criteri és el de `tools.living`: una defunció apuntada mana per damunt de",
+        "tot; si no n'hi ha, val l'any de naixement, i qui no en té l'hereta dels",
+        "parents que sí que en tenen. El llindar són els anys de `contemporanis:` a",
+        "`config.yaml`.",
+        "",
+    ])
+    return lines
 
 
 def main() -> int:
@@ -694,11 +812,12 @@ def main() -> int:
     write_report(entries, canon, live, snapshot, REPORTS / "frontier.md")
     counts = {
         s: sum(1 for e in entries if e.status == s)
-        for s in ("ready", "stuck", "unknown", "unlinked")
+        for s in ("ready", "stuck", "unknown", "unlinked", "living")
     }
     print(
         f"{len(entries)} dead-ends: {counts['ready']} ready, {counts['stuck']} stuck, "
-        f"{counts['unknown']} unknown, {counts['unlinked']} unlinked"
+        f"{counts['unknown']} unknown, {counts['unlinked']} unlinked, "
+        f"{counts['living']} presumed living (not research)"
     )
     print(f"{sum(e.upstream for e in entries)} ancestors importable from FamilySearch")
     print("wrote reports/frontier.md")

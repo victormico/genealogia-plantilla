@@ -51,6 +51,22 @@ familysearch:
 #     FAMILY_SEARCH_PASSWORD=...
 
 # ---------------------------------------------------------------------------
+# Persones contemporànies
+# ---------------------------------------------------------------------------
+#
+# Qui probablement encara viu no és recerca: els llibres parroquials i el
+# Registre Civil estan tancats per protegir-lo, FamilySearch l'amaga, i els
+# seus pares es pregunten a casa. `reports/frontier.md` els posa en un apartat
+# a part i `reports/worklist.md` no els hi porta.
+#
+# El llindar: anys des del naixement a partir dels quals es dona per difunt qui
+# no té defunció apuntada. 100 és el costum genealògic i el que fan servir els
+# registres civils per obrir un expedient al públic. Qui no té any de naixement
+# l'hereta dels parents que en tenen, a raó de 30 anys per generació.
+contemporanis:
+  llindar_anys: 100
+
+# ---------------------------------------------------------------------------
 # Regions: quin arxiu toca per a cada poble
 # ---------------------------------------------------------------------------
 #

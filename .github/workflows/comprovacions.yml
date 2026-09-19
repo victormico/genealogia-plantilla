@@ -38,6 +38,7 @@ jobs:
           python -m tools.tests.test_frontmatter
           python -m tools.tests.test_obsidian
           python -m tools.tests.test_frontier
+          python -m tools.tests.test_living
           python -m tools.tests.test_adg
           python -m tools.tests.test_apv
           python -m tools.tests.test_fs
