@@ -505,12 +505,16 @@ canvien alguna cosa. Si un dia falla, entra amb el navegador, copia el testimoni
 petició a l'API i passa'l amb `--token`.
 
 **`_SOSADABOVILLE` no es llegeix, però sí que es neteja en desar.** Ancestris el
-regenera cada vegada que desa i n'escriu **duplicats**: la mateixa persona acaba amb la
-mateixa numeració repetida, i cada desat n'afig una còpia més. Cap eina d'aquí no els
-llegeix i no fan mal a res, però és una fuita lenta. `tools.apply` i `tools.correct`
-deixen només l'última línia de cada registre —la que Ancestris creu ara mateix— cada
-cop que escriuen el fitxer, i ho diuen a la sortida quan en descarten cap; el que no
-s'ha de fer és esperar que Ancestris ho faça.
+regenera quan desa i de vegades n'escriu **duplicats**: la mateixa persona acaba amb la
+mateixa numeració repetida. Cap eina d'aquí no els llegeix i no fan mal a res, però
+embruten el diff. `tools.apply` i `tools.correct` esborren les línies **idèntiques**
+repetides dins d'un registre cada cop que escriuen el fitxer, i les llisten a la
+sortida i al resum final quan en descarten cap.
+
+Dues línies **amb valors diferents no es toquen mai**: una persona implex, que arriba
+al ventall per dues línies de descendència, porta dos números de Sosa vigents alhora
+(`2096 G12` i `4096 G13`). Res del fitxer no la distingeix d'un recàlcul vell, així
+que, si n'hi ha cap de sobrera, l'has de llevar tu.
 
 ## Llicència
 

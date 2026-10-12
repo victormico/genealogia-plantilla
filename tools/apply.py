@@ -607,14 +607,17 @@ def main() -> int:
         print("nothing to apply")
         return 0
 
-    # Both sides are compared with the Ancestris d'Aboville duplicates already
-    # removed, so the additive guard below still means what it says. Dropping
-    # them is not this proposal's doing and must not read as one of its
-    # deletions -- it is reported on its own line instead.
+    # Both sides are compared with the repeated Ancestris d'Aboville lines
+    # already removed, so the additive guard below still means what it says.
+    # Dropping them is not this proposal's doing and must not read as one of
+    # its deletions -- but it is a deletion all the same, so it is listed here
+    # and counted again in the summary, where a `tail` will still see it.
     before, dropped = dedupe_sosa(ged.raw)
     after, _ = dedupe_sosa(splicer.apply())
     if dropped:
-        print(f"  {len(dropped)} duplicate {SOSA_TAG} line(s) dropped on write")
+        print(f"  {len(dropped)} repeated {SOSA_TAG} line(s) dropped on write:")
+        for line in dropped:
+            print(f"    - {line}")
 
     if not args.quiet:
         removed = show_diff(before, after, ged.path.name)
@@ -624,7 +627,8 @@ def main() -> int:
 
     print(
         f"\n{applied} change(s) to {ged.path.name}: "
-        f"+{len(after) - len(before)} lines, no deletions"
+        f"+{len(after) - len(before)} lines, "
+        + (f"{len(dropped)} repeated {SOSA_TAG} dropped" if dropped else "no deletions")
     )
     if not args.write:
         print("dry run — pass --write to apply")

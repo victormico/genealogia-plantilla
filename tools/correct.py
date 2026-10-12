@@ -262,13 +262,16 @@ def main() -> int:
 
     for line in log:
         print(line)
-    # Compared with the Ancestris d'Aboville duplicates already gone from both
-    # sides, so the counts below describe THIS correction and not the cleanup
-    # that `write` does regardless. The cleanup gets its own line.
+    # Compared with the repeated Ancestris d'Aboville lines already gone from
+    # both sides, so the counts below describe THIS correction and not the
+    # cleanup that `write` does regardless. The cleanup is listed on its own
+    # and counted again in the summary.
     before, dropped = dedupe_sosa(ged.raw)
     after, _ = dedupe_sosa(render(ged, replacements, insertions, deletions))
     if dropped:
-        print(f"  {len(dropped)} línia/es {SOSA_TAG} duplicada/es que s'esborraran en desar")
+        print(f"  {len(dropped)} línia/es {SOSA_TAG} repetida/es que s'esborraran en desar:")
+        for line in dropped:
+            print(f"    - {line}")
 
     diff = list(
         unified_diff(before, after, fromfile=f"a/{ged.path.name}", tofile=f"b/{ged.path.name}", n=1, lineterm="")
@@ -276,7 +279,8 @@ def main() -> int:
     changed = sum(1 for d in diff if d.startswith(("+", "-")) and not d.startswith(("+++", "---")))
     print(f"\n{len(touched)} registres, {len(replacements)} línies substituïdes, "
           f"{sum(len(v) for v in insertions.values())} inserides, "
-          f"{len(deletions)} esborrades ({changed} línies al diff)")
+          f"{len(deletions)} esborrades ({changed} línies al diff)"
+          + (f", més {len(dropped)} {SOSA_TAG} repetides" if dropped else ""))
 
     if not args.write:
         print("assaig en sec — cal --write per aplicar-ho")
