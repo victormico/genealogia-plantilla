@@ -404,33 +404,46 @@ def _delete_guard_assertions(correct, ged, stamp) -> None:
 def test_dedupe_sosa() -> None:
     """The de-duplication that `write` does on every save.
 
-    Ancestris appends a fresh `_SOSADABOVILLE` line on each save instead of
-    replacing the one already there, so a long-lived tree accumulates several
-    lines where one belongs. `write` drops them, and this is where the rule is
-    pinned down: KEEP THE LAST, because the stale line comes first and the
-    current calculation is appended behind it.
+    Only IDENTICAL `_SOSADABOVILLE` lines in the same record are repeats. Two
+    different values are both kept: an implex ancestor legitimately carries
+    one Sosa number per line of descent, and the old keep-the-last rule ate
+    them on every write (issue #18).
     """
     print("\ndedupe _SOSADABOVILLE")
     raw = [
         "0 @I1@ INDI",
         "1 NAME A /B/",
-        "1 _SOSADABOVILLE 54-2 G5",   # stale: this is the one that must go
-        "1 _SOSADABOVILLE 54-1 G5",
-        "1 _SOSADABOVILLE 54-1 G5",
+        "1 _SOSADABOVILLE 54-2 G5",
+        "1 _SOSADABOVILLE 54-1 G5",   # repeated below: this copy goes
         "1 SEX M",
+        "1 _SOSADABOVILLE 54-1 G5",
         "0 @I2@ INDI",                # a single line is left alone
         "1 _SOSADABOVILLE 4 G3",
         "0 TRLR",
     ]
     cleaned, dropped = dedupe_sosa(raw)
-    check(len(dropped) == 2, "the two extra lines are dropped", str(len(dropped)))
+    check(dropped == ["1 _SOSADABOVILLE 54-1 G5"], "only the identical copy is dropped", str(dropped))
     check(
-        [ln for ln in cleaned if SOSA_TAG in ln]
-        == ["1 _SOSADABOVILLE 54-1 G5", "1 _SOSADABOVILLE 4 G3"],
-        "the LAST line of each record survives",
+        cleaned == [ln for i, ln in enumerate(raw) if i != 3],
+        "the LAST copy of a repeated value survives, in place",
     )
-    check(len(cleaned) == len(raw) - 2, "nothing else is touched", str(len(cleaned)))
     check(dedupe_sosa(cleaned) == (cleaned, []), "idempotent: a second pass is a no-op")
+
+    # Implex: two numbers, two generations, both current. Nothing goes.
+    implex = [
+        "0 @I00258@ INDI",
+        "1 _SOSADABOVILLE 2096 G12",
+        "1 _SOSADABOVILLE 4096 G13",
+        "0 @I00278@ INDI",
+        "1 _SOSADABOVILLE 4194-1 G12",
+        "1 _SOSADABOVILLE 8194-1 G13",
+        "0 TRLR",
+    ]
+    check(dedupe_sosa(implex) == (implex, []), "an implex person keeps both Sosa numbers")
+
+    # Whitespace is not a different value.
+    spaced = ["0 @I1@ INDI", "1 _SOSADABOVILLE 4 G3 ", "1 _SOSADABOVILLE 4 G3", "0 TRLR"]
+    check(len(dedupe_sosa(spaced)[1]) == 1, "a trailing space does not hide a repeat")
 
     # A file with no duplicates must come back untouched, or every save would
     # rewrite the file for nothing.
@@ -442,19 +455,23 @@ def test_dedupe_sosa() -> None:
     two = ["0 @I1@ INDI", "1 _SOSADABOVILLE 4 G3", "0 @I2@ INDI", "1 _SOSADABOVILLE 4 G3", "0 TRLR"]
     check(dedupe_sosa(two) == (two, []), "one line each in two records is not a duplicate")
 
-    # And it survives the round trip against a real file: `exemple.ged` already
-    # carries a genuine Ancestris duplicate (I00012), so writing it out leaves
-    # one line per person instead of accumulating a second copy.
+    # And it survives the round trip against a real file: `exemple.ged` carries
+    # a genuine Ancestris repeat (I00012: `16 G5`, `16-1 G5`, `16-1 G5`), so
+    # writing it out leaves each distinct value once and nothing repeated.
     ged = GedcomFile(EXAMPLE)
     with tempfile.TemporaryDirectory() as tmp:
         out = ged.write(Path(tmp) / "out.ged")
         reread = GedcomFile(out)
-        dupes = [
+        repeats = [
             r.xref
             for r in reread.of_type("INDI")
-            if len(reread.sub(r.xref, SOSA_TAG)) > 1
+            if len({ln.value for ln in reread.sub(r.xref, SOSA_TAG)}) != len(reread.sub(r.xref, SOSA_TAG))
         ]
-        check(not dupes, "a written file has no duplicate _SOSADABOVILLE lines", str(dupes[:3]))
+        check(not repeats, "a written file has no repeated _SOSADABOVILLE lines", str(repeats[:3]))
+        check(
+            [ln.value for ln in reread.sub("I00012", SOSA_TAG)] == ["16 G5", "16-1 G5"],
+            "I00012 keeps both of its distinct values",
+        )
 
 
 def main() -> int:

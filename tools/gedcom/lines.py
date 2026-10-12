@@ -183,7 +183,7 @@ class GedcomFile:
         )
 
     def write(self, path: str | Path, raw: list[str] | None = None) -> Path:
-        """Write the file out, dropping duplicate `_SOSADABOVILLE` lines.
+        """Write the file out, dropping repeated `_SOSADABOVILLE` lines.
 
         The de-duplication is here rather than in each caller so that nothing
         can write a duplicate by forgetting to ask. It is idempotent, so
@@ -210,47 +210,50 @@ SOSA_TAG = "_SOSADABOVILLE"
 
 
 def dedupe_sosa(raw: list[str]) -> tuple[list[str], list[str]]:
-    """Drop the duplicate `_SOSADABOVILLE` lines, keeping the last per record.
+    """Drop the repeated `_SOSADABOVILLE` lines: same record, same value.
 
-    Ancestris recomputes this tag on every save and *appends* the result
-    instead of replacing the line already there. Left alone, a record's count
-    of these lines only ever grows, one more per save. They harm nothing (no
-    tool here reads them; the Sosa count is done by walking `FAMC`) but they
-    swamp the diff of every save.
+    Ancestris has been seen to recompute this tag on save and *append* the
+    result instead of replacing the line already there, so a record can carry
+    the same `16-1 G5` two or three times. Those repeats harm nothing (no tool
+    here reads them; the Sosa count is done by walking `FAMC`) but they swamp
+    the diff, and they are what this removes.
 
-    **The last line is the one that survives, and that is not arbitrary.** The
-    stale line comes first and the current calculation is appended after it,
-    so the tail is what Ancestris believes today. A correct calculation never
-    swaps two siblings' numbers, so when two duplicated records disagree about
-    who leads, the later-appended value is the trustworthy one.
+    **Two lines with different values are never touched.** An implex ancestor,
+    reached through two lines of descent, legitimately carries two Sosa
+    numbers at once (`2096 G12` and `4096 G13`), both current. Nothing in the
+    file tells that apart from a stale recalculation left behind by an older
+    Ancestris, and dropping the wrong one loses data, so a disagreement is
+    left for a person to resolve. Issue #18 is the history: the old rule kept
+    only the last line of each record and ate fifteen implex numbers on every
+    write.
+
+    Of a run of identical lines the LAST one survives, so the record keeps the
+    position Ancestris last wrote it in.
 
     Returns `(lines, dropped)`. `dropped` is for reporting -- callers print it
     so a silent deletion never happens.
-
-    This does not fix the cause. The next Ancestris save will append one more
-    line to each affected record; this only keeps it from accumulating.
     """
-    keep_from = _sosa_indices_to_drop(raw)
-    if not keep_from:
+    drop = _sosa_indices_to_drop(raw)
+    if not drop:
         return list(raw), []
-    dropped = [raw[i] for i in sorted(keep_from)]
-    return [line for i, line in enumerate(raw) if i not in keep_from], dropped
+    dropped = [raw[i] for i in sorted(drop)]
+    return [line for i, line in enumerate(raw) if i not in drop], dropped
 
 
 def _sosa_indices_to_drop(raw: list[str]) -> set[int]:
-    """Indices of every `_SOSADABOVILLE` line but the last one of its record."""
+    """Indices of every `_SOSADABOVILLE` line repeated later in its record.
+
+    The value is compared with its whitespace collapsed, so a trailing space
+    does not make two copies of the same number look different.
+    """
     drop: set[int] = set()
-    found: list[int] = []
-
-    def flush() -> None:
-        if len(found) > 1:
-            drop.update(found[:-1])
-        found.clear()
-
+    last: dict[str, int] = {}  # value -> index of its latest line in this record
     for i, line in enumerate(raw):
         if line.startswith("0 "):
-            flush()
+            last.clear()
         elif line.startswith(f"1 {SOSA_TAG} "):
-            found.append(i)
-    flush()
+            key = " ".join(line.split()[2:])
+            if key in last:
+                drop.add(last[key])
+            last[key] = i
     return drop
