@@ -391,7 +391,12 @@ def snapshot_load(path: Path = SNAPSHOT) -> dict | None:
         return None
 
 
-def snapshot_write(entries: list[FrontierEntry], root: str | None, path: Path = SNAPSHOT) -> Path:
+def snapshot_write(
+    entries: list[FrontierEntry],
+    root: str | None,
+    path: Path = SNAPSHOT,
+    live: LiveTree | None = None,
+) -> Path:
     """Save only what this report prints about FamilySearch, not the pedigree.
 
     `cache/pedigree.json` cannot be committed: it needs credentials to refetch,
@@ -399,6 +404,10 @@ def snapshot_write(entries: list[FrontierEntry], root: str | None, path: Path = 
     different in kind -- the parents already proposed for people in the
     frontier, the same facts `frontier.md` prints in prose -- so it can sit in
     git and let the report stay accurate between logins.
+
+    It also keeps how many people the pedigree left unasked (see
+    `pedigree_gaps`), because the committed reports are always written from
+    this file and the warning would otherwise never reach them.
     """
     people: dict[str, dict] = {}
     for e in entries:
@@ -427,6 +436,10 @@ def snapshot_write(entries: list[FrontierEntry], root: str | None, path: Path = 
         "arrel": root or (str(configured_root) if configured_root else ""),
         "persones": people,
     }
+    if live and live.skipped_leaves:
+        data["saltades"] = len(live.skipped_leaves)
+    if live and live.beyond_depth:
+        data["per_sobre"] = len(live.beyond_depth)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(data, sort_keys=True, indent=2, ensure_ascii=False) + "\n",
@@ -520,17 +533,52 @@ def build(
     return entries
 
 
+def pedigree_gaps(skipped: int, beyond: int) -> str:
+    """What the pedigree returned without asking for the parents, if anything.
+
+    A fetch capped with `--max-chained` leaves people at the eighth generation
+    of a call whose parents nobody asked for. Calling that pedigree «fresc» and
+    nothing else is how a tree half its real size went unnoticed for weeks.
+    The top of the last `--depth` level is the same kind of gap, but expected.
+    """
+    out = ""
+    if skipped:
+        out += (
+            f" **Incomplet:** {skipped} persones de la vuitena generació d'una "
+            "crida no s'han seguit (`skipped_leaves`). Refés-lo amb "
+            "`python -m tools.fs.fetch` sense `--max-chained`."
+        )
+    if beyond:
+        out += (
+            f" {beyond} persones de dalt de tot no s'han seguit més amunt "
+            "(`--depth`)."
+        )
+    return out
+
+
+def snapshot_gaps(snapshot: dict) -> str:
+    """`pedigree_gaps` for the pedigree a snapshot was written from."""
+    return pedigree_gaps(snapshot.get("saltades", 0), snapshot.get("per_sobre", 0))
+
+
+def pedigree_provenance(live: LiveTree) -> str:
+    """The provenance line for a fresh pedigree, with its gaps."""
+    return "FamilySearch: pedigrí fresc de `cache/pedigree.json`." + pedigree_gaps(
+        len(live.skipped_leaves), len(live.beyond_depth)
+    )
+
+
 def _provenance(entries: list[FrontierEntry], live: LiveTree | None, snapshot: dict | None) -> str:
     """One line saying where the FamilySearch classification came from."""
     if live:
-        return "FamilySearch: pedigrí fresc de `cache/pedigree.json`."
+        return pedigree_provenance(live)
     if snapshot:
         covered = sum(1 for e in entries if e.status in ("ready", "stuck"))
         return (
             f"FamilySearch: instantània de `reports/frontier-fs.json`, del "
             f"{snapshot.get('data', '?')} · {covered} de {len(entries)} persones "
             "sense pares hi són cobertes."
-        )
+        ) + snapshot_gaps(snapshot)
     return (
         "FamilySearch: no s'ha pogut consultar (ni `cache/pedigree.json` ni "
         "`reports/frontier-fs.json`). Executa `python -m tools.fs.fetch` per refer-la."
@@ -795,7 +843,7 @@ def main() -> int:
     entries = build(canon, live, snapshot)
 
     if live:
-        written = snapshot_write(entries, live.root, snapshot_path)
+        written = snapshot_write(entries, live.root, snapshot_path, live)
         print(f"wrote {written.relative_to(ROOT)}")
 
     if args.top:

@@ -51,12 +51,14 @@ def unanswered(live: LiveTree) -> set[str]:
     `fetch_pedigree` records in `skipped_leaves`. Their parents would have been
     the ninth generation of that call, so they were never in the response to
     begin with. Empty for the same reason, but a question rather than an answer.
+    The same goes for `beyond_depth`, the top of the last level `--depth`
+    allowed.
 
     The other silence -- a PID the fetch never returned at all -- cannot be
     enumerated from here, because nothing in the pedigree mentions it. It shows
     up in `pending()` as plain absence.
     """
-    return set(live.skipped_leaves)
+    return set(live.skipped_leaves) | set(live.beyond_depth)
 
 
 def pending(canon: Tree, live: LiveTree) -> list[Person]:
@@ -104,8 +106,9 @@ def check_person(api: Api, live: LiveTree, person: Person) -> int | None:
         return None
     _absorb(live, data)
     # Answered now, whichever way it came out.
-    if pid in live.skipped_leaves:
-        live.skipped_leaves.remove(pid)
+    for unasked in (live.skipped_leaves, live.beyond_depth):
+        if pid in unasked:
+            unasked.remove(pid)
     return len(live.parents(pid))
 
 
