@@ -23,7 +23,14 @@ from urllib.parse import quote_plus
 
 from . import config, report
 from .config import tree_path
-from .frontier import FrontierEntry, SNAPSHOT, build, snapshot_load
+from .frontier import (
+    FrontierEntry,
+    SNAPSHOT,
+    build,
+    pedigree_provenance,
+    snapshot_gaps,
+    snapshot_load,
+)
 from .fs.fetch import LiveTree
 from .normalize import fold
 from .people import Tree
@@ -87,12 +94,12 @@ def search_links(entry: FrontierEntry) -> list[tuple[str, str]]:
 def _provenance(live: LiveTree | None, snapshot: dict | None) -> str:
     """One line saying where the FamilySearch classification came from."""
     if live:
-        return "FamilySearch: pedigrí fresc de `cache/pedigree.json`."
+        return pedigree_provenance(live)
     if snapshot:
         return (
             f"FamilySearch: instantània de `reports/frontier-fs.json`, del "
             f"{snapshot.get('data', '?')}."
-        )
+        ) + snapshot_gaps(snapshot)
     return (
         "FamilySearch: no s'ha pogut consultar (ni `cache/pedigree.json` ni "
         "`reports/frontier-fs.json`). Executa `python -m tools.fs.fetch` per refer-la."

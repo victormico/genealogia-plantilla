@@ -189,6 +189,23 @@ altra**: així no acabes amb una pila de PR que proposen tres vegades el mateix.
 Desa el resultat a `cache/pedigree.json`. Es pot repetir quan vulguis: les respostes
 queden a la memòria cau, així que regenerar informes no costa cap petició.
 
+Cada consulta torna vuit generacions, i la baixada torna a arrencar des de
+**totes** les persones de la vuitena generació. Una consulta encadenada comença
+a la generació 8, o siga que així s'arriba a la 15. `--depth 2` hi torna a
+arrencar des de la 15 i arriba a la 22, però costa molt més i aporta poc: el
+29-10-2026 el primer nivell va ser 99 consultes per 1.631 persones, i el segon,
+200 consultes més per 306 persones. El límit de tot és `--max-requests` (300 per
+defecte), que s'atura amb un error clar.
+
+`--max-chained N` limita les consultes encadenades, però qui en queda fora va a
+`skipped_leaves`: el resum ho diu (`skipped=N`), i `frontier.md` i
+`worklist.md` avisen a la capçalera que el pedigrí és **incomplet**. Fins al
+29-10-2026 aquest límit era 40 per defecte, i amb més de 40 persones a la
+vuitena generació una baixada normal tornava menys de la meitat de l'arbre.
+Qui queda dalt de tot de l'últim nivell va a `beyond_depth`, i la capçalera
+també ho diu, sense dir-ne incomplet. `tools.fs.check` compta les dues llistes
+com a «ningú no ho ha preguntat».
+
 ### Comprovar els que el pedigrí no respon
 
 ```bash

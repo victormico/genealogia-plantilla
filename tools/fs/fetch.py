@@ -9,11 +9,22 @@ The root PID is `familysearch: arrel:` in config.yaml.
 The ancestry endpoint returns up to 8 generations per call and labels everyone
 with a Sosa `ascendancyNumber`, so parent links come from arithmetic: the person
 numbered N has father 2N and mother 2N+1. Spouses are numbered `N-S`. To go past
-8 generations we re-root a fresh call at each eighth-generation person and merge
-the edges; no global renumbering is needed because we keep edges, not numbers.
+8 generations we re-root a fresh call at each eighth-generation person -- every
+one of them -- and merge the edges; no global renumbering is needed because we
+keep edges, not numbers. `--depth N` repeats that N times: a re-rooted call
+starts at generation 8, so one level reaches 15 and two reach 22.
+`--max-requests` is the budget and stops the run with a clear error.
+
+`--max-chained N` caps the re-rooted calls, and whoever it leaves out goes to
+`skipped_leaves`: the summary line shows it (`skipped=N`) and the reports call
+the pedigree incomplete in their header. Whoever sits at the eighth generation
+of the last level goes to `beyond_depth` instead. Both are people the fetch
+returned without ever asking for their parents, and `tools.fs.check` treats
+them as unasked, not as stuck.
 
     python3 -m tools.fs.fetch                       # the root from config.yaml
     python3 -m tools.fs.fetch --root XXXX-XXX        # or one off the command line
+    python3 -m tools.fs.fetch --depth 2              # past generation 15 too
 """
 
 from __future__ import annotations
@@ -140,6 +151,7 @@ class LiveTree:
     root: str | None = None
     calls: int = 0
     skipped_leaves: list[str] = field(default_factory=list)
+    beyond_depth: list[str] = field(default_factory=list)
 
     # -- Tree-compatible surface -----------------------------------------
 
@@ -214,7 +226,9 @@ class LiveTree:
     def __repr__(self) -> str:
         return (
             f"<LiveTree root={self.root} people={len(self.people)} "
-            f"edges={len(self.father_of) + len(self.mother_of)} calls={self.calls}>"
+            f"edges={len(self.father_of) + len(self.mother_of)} calls={self.calls} "
+            f"skipped={len(self.skipped_leaves)} "
+            f"beyond_depth={len(self.beyond_depth)}>"
         )
 
     # -- serialisation ----------------------------------------------------
@@ -224,6 +238,7 @@ class LiveTree:
             "root": self.root,
             "calls": self.calls,
             "skipped_leaves": self.skipped_leaves,
+            "beyond_depth": self.beyond_depth,
             "people": [
                 {
                     "pid": p.xref,
@@ -249,6 +264,7 @@ class LiveTree:
             root=data.get("root"),
             calls=data.get("calls", 0),
             skipped_leaves=data.get("skipped_leaves", []),
+            beyond_depth=data.get("beyond_depth", []),
             father_of=dict(data.get("father_of", {})),
             mother_of=dict(data.get("mother_of", {})),
             couples=[tuple(c) for c in data.get("couples", [])],
@@ -320,50 +336,86 @@ def _absorb(tree: LiveTree, data: dict) -> list[str]:
 def fetch_pedigree(
     api: Api,
     root: str = "",
-    max_chained: int = 40,
+    max_chained: int = 0,
     verbose: bool = True,
+    depth: int = 1,
 ) -> LiveTree:
-    """Ancestry of `root`, chaining past the 8-generation limit per call."""
+    """Ancestry of `root`, chaining past the 8-generation limit per call.
+
+    Every eighth-generation person is re-rooted, `depth` levels deep (0 is no
+    limit). The default, one level, reaches generation 15. On 29-10-2026 that
+    took 99 calls for 1,631 people; a second level took 200 more calls for 306
+    more people, and a third would not have fitted in 300 requests.
+
+    `max_chained` caps the re-rooted calls; 0, the default, is no cap. It used
+    to be 40, and once the tree had more than 40 people at generation 8 a
+    plain fetch quietly came back with 695 people instead of 1,631.
+    """
     tree = LiveTree(root=root)
 
     first = api.ancestry(root, generations=8)
     tree.calls += 1
     if not first:
         raise RuntimeError(f"no ancestry returned for {root}")
-    frontier = _absorb(tree, first)
+    level = _absorb(tree, first)
     if verbose:
         print(f"  call 1: root {root} -> {len(tree.people)} people, "
-              f"{len(frontier)} at generation 8")
+              f"{len(level)} at generation 8")
 
-    # Only re-root where it can pay off, and say out loud what we skip.
-    to_chain = frontier[:max_chained]
-    if len(frontier) > max_chained:
-        tree.skipped_leaves = frontier[max_chained:]
+    # Implex puts the same ancestor at the eighth generation of more than one
+    # call; one re-root answers for all of them.
+    chained = {root}
+    reached = 0
+    while level:
+        if depth and reached >= depth:
+            tree.beyond_depth = [p for p in dict.fromkeys(level) if p not in chained]
+            break
+        reached += 1
+        deeper: list[str] = []
+        for i, pid in enumerate(level):
+            if pid in chained:
+                continue
+            if max_chained and len(chained) - 1 >= max_chained:
+                # Unasked, all of them: the rest of this level, and the top of
+                # the calls already made, which is beyond_depth if this was
+                # the last level the depth allowed.
+                rest = [p for p in dict.fromkeys(level[i:]) if p not in chained]
+                above = [p for p in dict.fromkeys(deeper) if p not in chained]
+                if depth and reached >= depth:
+                    tree.skipped_leaves, tree.beyond_depth = rest, above
+                else:
+                    tree.skipped_leaves = rest + [p for p in above if p not in rest]
+                level = []
+                break
+            chained.add(pid)
+            before = len(tree.people)
+            data = api.ancestry(pid, generations=8)
+            tree.calls += 1
+            if not data:
+                continue
+            deeper.extend(_absorb(tree, data))
+            gained = len(tree.people) - before
+            if verbose and gained:
+                person = tree.people.get(pid)
+                print(
+                    f"  call {tree.calls}: {pid} {person.label() if person else ''} "
+                    f"-> +{gained} people"
+                )
+        else:
+            level = deeper
+
+    # Printed whatever `verbose` says: a capped fetch is an incomplete one.
+    if tree.skipped_leaves:
         print(
             f"  NOTE: {len(tree.skipped_leaves)} eighth-generation people not "
             f"followed (--max-chained {max_chained}): "
             f"{', '.join(tree.skipped_leaves[:5])}..."
         )
-
-    for n, pid in enumerate(to_chain, start=2):
-        before = len(tree.people)
-        data = api.ancestry(pid, generations=8)
-        tree.calls += 1
-        if not data:
-            continue
-        deeper = _absorb(tree, data)
-        gained = len(tree.people) - before
-        if verbose and gained:
-            person = tree.people.get(pid)
-            print(
-                f"  call {n}: {pid} {person.label() if person else ''} "
-                f"-> +{gained} people"
-            )
-        # Anything deeper still could be chained again; one extra level is
-        # plenty for a tree that currently reaches generation 10.
-        for deep_pid in deeper:
-            if deep_pid not in tree.people:
-                continue
+    if tree.beyond_depth:
+        print(
+            f"  note: {len(tree.beyond_depth)} people at the top of the last "
+            f"level not followed further (--depth {depth})"
+        )
     return tree
 
 
@@ -375,8 +427,14 @@ def main() -> int:
     parser.add_argument(
         "--max-chained",
         type=int,
-        default=40,
-        help="how many 8th-generation people to re-root from [40]",
+        default=0,
+        help="cap on re-rooted calls past the first; 0 = follow everyone [0]",
+    )
+    parser.add_argument(
+        "--depth",
+        type=int,
+        default=1,
+        help="levels of re-rooting; 1 reaches generation 15, 0 = no limit [1]",
     )
     parser.add_argument(
         "--out",
@@ -389,7 +447,7 @@ def main() -> int:
     fs = build_session(args)
     api = Api(fs)
     print(f"fetching pedigree of {root} as {fs.display_name}")
-    tree = fetch_pedigree(api, root, args.max_chained)
+    tree = fetch_pedigree(api, root, args.max_chained, depth=args.depth)
     print(f"\n{tree}")
     print(f"{fs.stats()}")
 
