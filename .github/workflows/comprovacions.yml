@@ -50,6 +50,8 @@ jobs:
           python -m tools.tests.test_archive
           python -m tools.tests.test_apply_citations
           python -m tools.tests.test_apply_reuse
+          python -m tools.tests.test_branca
+          python -m tools.tests.test_portal
 
       - name: Comprovacions
         run: |

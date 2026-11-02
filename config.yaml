@@ -352,3 +352,39 @@ adg:
   # baixes les vuit pàgines que et fan falta o el llibre sencer. Pujar-lo ha de
   # ser una decisió, no un descuit: per això hi ha un límit i no un avís.
   max_pagines: 12
+
+# ---------------------------------------------------------------------------
+# El portal per a la família (tools/portal.py, tools/branca.py)
+# ---------------------------------------------------------------------------
+#
+# Un webtrees que la família consulta i que es refà des d'aquest repositori:
+# l'arbre es continua editant a l'Ancestris, i el portal només el mostra. Per
+# provar-lo a l'ordinador: `python -m tools.portal local`.
+#
+# Sense res més, el portal té un sol arbre, el sencer. Cada branca de
+# `branques:` n'afegeix un altre, retallat per `tools.branca` —els avantpassats
+# d'algú, tots els seus descendents i els cònjuges, sense els pares d'aquests—,
+# i qui només té accés a aquell arbre no veu res de la resta, perquè no hi és.
+
+portal:
+  # El nom curt de l'arbre sencer a webtrees, i el títol que hi surt.
+  nom: arbre
+  titol: ""
+
+  # La persona per on s'obre l'arbre sencer (xref). En blanc, `estat.arrel`, i
+  # si tampoc n'hi ha, el Sosa 1.
+  arrel: ""
+
+  # La llengua de la interfície, amb els codis de webtrees: ca, es, en-GB, fr…
+  llengua: ca
+
+  # Les branques: el nom curt de cada arbre, i d'on parteix (`sosa:` o `xref:`).
+  # `llengua:` és la de qui el llegirà, i `compte:` el compte de prova que en fa
+  # `tools.portal local` (si no, el nom de la branca).
+  branques: {}
+  # branques:
+  #   branca-segarra:
+  #     titol: Branca Segarra
+  #     sosa: 6
+  #     llengua: es
+  #     compte: segarra

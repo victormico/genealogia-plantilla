@@ -512,6 +512,43 @@ Quatre coses que val la pena saber abans de tocar-ho:
 partida val la pena, el que entra al repositori és **la transcripció en `.md`**, no
 l'escaneig. L'arxiu permet còpies per a ús personal i cobra drets per republicar.
 
+## El portal per a la família: `tools/portal.py`
+
+Un [webtrees](https://webtrees.net) on la família consulta l'arbre i llegeix els
+informes **a mesura que avança la recerca**. No és un segon lloc on editar: l'arbre
+continua sent el GEDCOM de l'Ancestris, i cada importació esborra l'arbre de webtrees
+i el torna a carregar. Les notícies, els comptes i els ajustos viuen fora de les
+taules de l'arbre i ho sobreviuen. Per què webtrees, què ja s'ha provat i què queda
+per muntar (l'allotjament, el workflow, els informes com a notícies) és a l'issue #22.
+
+```bash
+.venv/bin/python -m tools.portal local                # webtrees a http://127.0.0.1:8080
+.venv/bin/python -m tools.portal gedcoms sortida/     # només els GEDCOM que importa
+.venv/bin/python -m tools.branca --sosa 6 branca.ged  # una branca soltant
+```
+
+`local` ho instal·la tot **fora del repositori** (`~/webtrees-prova`): webtrees 2.2.6,
+el tema JustLight i els gràfics de magicsunday, un arbre per a cada entrada de
+`portal:` i un compte de prova per arbre, amb la contrasenya `provaprova`. Tornar-lo a
+executar recarrega els arbres des del GEDCOM, que és el que farà el portal de veritat
+a cada merge. Cal PHP 8.3 o més nou (amb `pdo_sqlite`, `intl`, `mbstring` i `gd`) i git.
+
+**Un arbre per branca.** Cada entrada de `portal.branques` fa un arbre amb els
+avantpassats d'algú, tots els seus descendents i els cònjuges —sense els pares
+d'aquests, que ja són d'una altra branca—, i el compte que només hi té accés **no veu
+res de la resta, perquè no hi és**: no és una persona amagada, és una persona absent,
+sense cap punter que hi porte. La restricció per parentiu que porta webtrees no ho fa:
+compta passos, travessa els matrimonis i, per defecte, només s'aplica als vius.
+
+Dues coses que val la pena saber:
+
+- **Les notes en prosa no es retallen.** Si la nota d'algú de la branca parla d'algú
+  de fora, el nom hi continua escrit. Llegeix-les abans de donar accés a ningú.
+- **webtrees 2.2.6 té tres entrebancs per la línia d'ordres**, que `tools.portal`
+  esquiva i que són aportacions pendents (#22): `tree-import` no vol el BOM que
+  escriu l'Ancestris; `tree-setting REQUIRE_AUTHENTICATION 1` no fa res, i un arbre
+  «privat» continua públic; i `tree-import` no troba els arbres privats.
+
 ## Coses que val la pena saber
 
 **Els duplicats només es detecten per `_FSFTID`.** Abans d'acceptar uns pares, mira si ja
